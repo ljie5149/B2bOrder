@@ -1,0 +1,174 @@
+﻿/* ==========================================================================
+   待辦行事曆自訂樣式 (呼應外觀設計)
+   ========================================================================== */
+
+/* 調整 FullCalendar 區塊使其符合扁平化現代風格 */
+.fc {
+    background: #ffffff;
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 0 10px rgba(0,0,0,0.03);
+}
+
+.fc-theme-standard td, .fc-theme-standard th {
+    border: 1px solid #f0f2f5 !important;
+}
+
+.fc-col-header-cell {
+    background-color: #fafbfc;
+    padding: 10px 0 !important;
+}
+
+/* 週日與週六日期標題顏色自訂 */
+.fc-day-sun .fc-col-header-cell-cushion,
+.fc-day-sun .fc-daygrid-day-number,
+.fc-day-sat .fc-col-header-cell-cushion,
+.fc-day-sat .fc-daygrid-day-number {
+    color: #dc3545 !important;
+}
+
+/* ==========================================================================
+   擬真便條紙外觀與 Hover 放大置頂視覺特效 (行事曆事件)
+   ========================================================================== */
+
+/* 1. FullCalendar 日曆事件容器定位基準 */
+.fc-daygrid-event-harness,
+.fc-timegrid-event-harness {
+    /* 讓 z-index 在切換時有平滑的過渡感 */
+    transition: z-index 0.2s ease;
+}
+
+    /* 2. 當滑鼠懸停在該事件容器時，確保其 Harness 被拉到最前端 */
+    .fc-daygrid-event-harness:hover,
+    .fc-timegrid-event-harness:hover {
+        z-index: 9999 !important; /* 核心關鍵：確保 Hover 的便條紙能絕對蓋在其他天或同天其他事件上方 */
+    }
+
+/* 3. 打造擬真「便條紙」基本樣式 */
+/* 💡 修正關鍵：強迫 FullCalendar 內層的所有文字節點與標題，全部套用深色字體 */
+.fc-event,
+.fc-event .fc-event-main,
+.fc-event .fc-event-title,
+.fc-event-title-container,
+.fc-event-main-frame {
+    color: #2c3e50 !important; /* 便條紙搭配深色字體，模擬手寫感 */
+}
+.fc-event {
+    cursor: pointer;
+    border: none !important;
+    padding: 6px 10px !important;
+    border-radius: 2px !important; /* 較直角的邊框更具備真實紙張感 */
+    font-size: 0.85rem !important;
+    font-weight: 600;
+    color: #2c3e50 !important; /* 便條紙搭配深色字體，模擬手寫感 */
+    /* 便條紙特殊隱藏與動畫設定 */
+    position: relative;
+    overflow: hidden !important;
+    max-height: 26px !important; /* 預設高度：只漏出標題第一行，蓋住下方多餘內容 */
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important; /* 展開與放大的平滑曲線 */
+    /* 模擬紙張陰影與微幅旋轉（讓它看起來像隨意黏貼上去的） */
+    box-shadow: 2px 2px 6px rgba(0, 0, 0, 0.08) !important;
+    transform: rotate(-0.7deg);
+    opacity: 0.95;
+}
+
+    /* 4. 當滑鼠懸停 (Hover) 在便條紙上時的動態展開、放大與擺正 */
+    .fc-event:hover {
+        max-height: 300px !important; /* 展開成能容納完整長文本或詳細內容的高度 */
+        transform: scale(1.08) rotate(0deg); /* 稍微放大 1.08 倍並擺正紙張，方便直覺閱讀 */
+        box-shadow: 5px 15px 30px rgba(0, 0, 0, 0.15) !important; /* 增強浮空陰影，創造強烈的立體紙張感 */
+        opacity: 1;
+        overflow: visible !important; /* 允許內容完全流出顯示 */
+    }
+
+/* 5. 處理文字切斷與 Hover 還原 */
+.fc-event-title {
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+}
+
+.fc-event:hover .fc-event-title {
+    white-space: normal; /* Hover 時允許換行，顯示完整細節 */
+}
+
+/* 6. 行事曆便條紙配色優化 (採用經典文具便條紙的柔和黃、藍、綠) */
+.bg-work-event {
+    background-color: #fff9c4 !important; /* 經典文具便條紙黃 */
+    border-left: 5px solid #fbc02d !important; /* 左側粗邊條加深質感 */
+}
+
+.bg-life-event {
+    background-color: #e1f5fe !important; /* 柔和粉藍 */
+    border-left: 5px solid #0288d1 !important;
+}
+
+.bg-personal-event {
+    background-color: #e8f5e9 !important; /* 柔和粉綠 */
+    border-left: 5px solid #388e3c !important;
+}
+
+/* ==========================================================================
+   已完成事項的質感淡綠色覆蓋樣式
+   ========================================================================== */
+.event-completed {
+    background-color: #e8f5e9 !important; /* 文具感極淡綠色背景 */
+    border-left: 5px solid #81c784 !important; /* 左側粗邊條改為柔和綠 */
+    color: #2e7d32 !important; /* 深綠色字體（模擬手寫筆跡） */
+    text-decoration: line-through !important; /* 加上刪除線，更有完結感 */
+    opacity: 0.85 !important; /* 微調透明度，讓視覺退到背景 */
+}
+
+    /* 強制讓內層的 FullCalendar 文字標題也一起變深綠色與刪除線 */
+    .event-completed .fc-event-main,
+    .event-completed .fc-event-title,
+    .event-completed .fc-event-title-container {
+        color: #2e7d32 !important;
+        text-decoration: line-through !important;
+    }
+
+
+/* ==========================================================================
+   左側未排程事項樣式
+   ========================================================================== */
+.todo-item {
+    cursor: grab;
+    transition: all 0.2s;
+    border: 1px solid #e9ecef;
+    background-color: #ffffff;
+}
+
+    .todo-item:hover {
+        background-color: #f8f9fa;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    }
+
+.handle {
+    color: #ced4da;
+    cursor: move;
+}
+
+/* 分類標籤顏色 (左側清單用) */
+.badge-work {
+    background-color: #ffeef0;
+    color: #dc3545;
+}
+
+.badge-life {
+    background-color: #e8f0fe;
+    color: #1a73e8;
+}
+
+.badge-personal {
+    background-color: #e6f4ea;
+    color: #137333;
+}
+
+/* 其他輔助字型大小 */
+.fs-7 {
+    font-size: 0.875rem !important;
+}
+
+.text-xs {
+    font-size: 0.75rem !important;
+}

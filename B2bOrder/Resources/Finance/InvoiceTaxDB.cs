@@ -1,0 +1,803 @@
+namespace B2bOrder.Resources.Finance
+{
+    /// <summary>
+    /// InvoiceTaxDB V2 Shared Core Schema
+    /// 設計目標：
+    /// 1. 同時支援 Shopping Platform、B2B Sales、Purchase 與 Construction ERP
+    /// 2. 支援銷項發票、進項發票、電子發票、作廢、折讓、載具、捐贈、稅額與申報
+    /// 3. SalesOrderDB、PurchaseDB、PaymentDB、AccountingDB 與 ReturnAfterSalesDB 透過 API/Event 串接
+    /// 4. 支援台灣電子發票情境，同時保留跨國稅務擴充欄位
+    /// 5. nid：資料庫內部主鍵；sid：跨服務/API 對外識別碼
+    /// 6. avalible：Y可用；W停用；D刪除
+    /// 7. 適用 MySQL 8.x / InnoDB / utf8mb4
+    /// </summary>
+    internal static class InvoiceTaxDB
+    {
+        public static readonly string CreateTables = @"
+SET NAMES utf8mb4;
+SET FOREIGN_KEY_CHECKS = 0;
+
+-- =========================================================
+-- 01. 稅別與發票政策
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS tax_type (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '稅別序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    modify_date             DATETIME                                NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP COMMENT '修改日期',
+    tax_code                VARCHAR(100)                        NOT NULL COMMENT '稅別代碼',
+    tax_name                VARCHAR(200)                        NOT NULL COMMENT '稅別名稱',
+    tax_category            VARCHAR(30)                         NOT NULL COMMENT 'TAXABLE應稅;ZERO_RATE零稅率;EXEMPT免稅;MIXED混合;WITHHOLDING扣繳;OTHER',
+    tax_rate                DECIMAL(8,4)                        NOT NULL DEFAULT 0 COMMENT '稅率百分比',
+    country_sid             VARCHAR(32)                             NULL COMMENT 'MasterDB國家序號',
+    region_sid              VARCHAR(32)                             NULL COMMENT '行政區或稅務區域序號',
+    recoverable_mark        TINYINT(1)                          NOT NULL DEFAULT 1 COMMENT '進項稅是否可扣抵',
+    inclusive_mark          TINYINT(1)                          NOT NULL DEFAULT 0 COMMENT '價格是否含稅',
+    effective_start_date    DATE                                NOT NULL COMMENT '生效日',
+    effective_end_date      DATE                                    NULL COMMENT '失效日',
+    tax_status              VARCHAR(20)                         NOT NULL DEFAULT 'ACTIVE' COMMENT 'ACTIVE啟用;INACTIVE停用',
+    avalible                VARCHAR(2)                          NOT NULL DEFAULT 'Y' COMMENT 'Y可用;D刪除;W停用',
+    remark                  TEXT                                    NULL COMMENT '備註',
+    CONSTRAINT uk_tt_tax_code UNIQUE (tax_code),
+    INDEX idx_tt_tax_category (tax_category),
+    INDEX idx_tt_country_sid (country_sid),
+    INDEX idx_tt_region_sid (region_sid),
+    INDEX idx_tt_effective_date (effective_start_date, effective_end_date),
+    INDEX idx_tt_status (tax_status),
+    INDEX idx_tt_avalible (avalible),
+    CHECK (tax_rate >= 0),
+    CHECK (effective_end_date IS NULL OR effective_end_date >= effective_start_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='稅別與稅率主檔';
+
+CREATE TABLE IF NOT EXISTS tax_invoice_policy (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '發票政策序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    modify_date             DATETIME                                NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP COMMENT '修改日期',
+    policy_code             VARCHAR(100)                        NOT NULL COMMENT '政策代碼',
+    policy_name             VARCHAR(200)                        NOT NULL COMMENT '政策名稱',
+    company_sid             VARCHAR(32)                             NULL COMMENT '公司序號',
+    business_unit_sid       VARCHAR(32)                             NULL COMMENT '營運單位序號',
+    channel_sid             VARCHAR(32)                             NULL COMMENT '通路序號',
+    invoice_mode            VARCHAR(30)                         NOT NULL DEFAULT 'ELECTRONIC' COMMENT 'ELECTRONIC電子;PAPER紙本;BOTH兩者',
+    issue_trigger           VARCHAR(30)                         NOT NULL DEFAULT 'PAYMENT' COMMENT 'ORDER訂單;PAYMENT付款;SHIPMENT出貨;DELIVERY交付;MILESTONE里程碑;MANUAL人工',
+    issue_deadline_days     INT                                 NOT NULL DEFAULT 0 COMMENT '觸發後幾日內開立',
+    auto_issue_enabled      TINYINT(1)                          NOT NULL DEFAULT 1 COMMENT '是否自動開立',
+    split_invoice_allowed   TINYINT(1)                          NOT NULL DEFAULT 1 COMMENT '是否允許分批開票',
+    consolidate_allowed     TINYINT(1)                          NOT NULL DEFAULT 0 COMMENT '是否允許彙總開票',
+    default_tax_type_sid    VARCHAR(32)                             NULL COMMENT '預設稅別序號',
+    rounding_mode           VARCHAR(20)                         NOT NULL DEFAULT 'HALF_UP' COMMENT 'HALF_UP四捨五入;DOWN無條件捨去;UP無條件進位;BANKERS銀行家',
+    rounding_scale          INT                                 NOT NULL DEFAULT 0 COMMENT '稅額小數位數',
+    policy_status           VARCHAR(20)                         NOT NULL DEFAULT 'ACTIVE' COMMENT 'ACTIVE啟用;INACTIVE停用',
+    avalible                VARCHAR(2)                          NOT NULL DEFAULT 'Y' COMMENT 'Y可用;D刪除;W停用',
+    remark                  TEXT                                    NULL COMMENT '備註',
+    CONSTRAINT uk_tip_policy_code UNIQUE (policy_code),
+    INDEX idx_tip_company_sid (company_sid),
+    INDEX idx_tip_business_unit_sid (business_unit_sid),
+    INDEX idx_tip_channel_sid (channel_sid),
+    INDEX idx_tip_issue_trigger (issue_trigger),
+    INDEX idx_tip_status (policy_status),
+    INDEX idx_tip_avalible (avalible),
+    CHECK (issue_deadline_days >= 0),
+    CHECK (rounding_scale >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='發票開立與稅額政策';
+
+-- =========================================================
+-- 02. 發票字軌與號碼
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS tax_invoice_track (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '發票字軌序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    modify_date             DATETIME                                NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP COMMENT '修改日期',
+    track_code              VARCHAR(10)                         NOT NULL COMMENT '發票字軌',
+    invoice_year            INT                                 NOT NULL COMMENT '發票年度',
+    invoice_period          VARCHAR(10)                         NOT NULL COMMENT '發票期別，例如01-02',
+    company_sid             VARCHAR(32)                         NOT NULL COMMENT '公司序號',
+    business_unit_sid       VARCHAR(32)                             NULL COMMENT '營業單位序號',
+    invoice_type            VARCHAR(30)                         NOT NULL COMMENT 'B2C;B2B;GENERAL一般;SPECIAL特種;OTHER',
+    start_number            BIGINT UNSIGNED                     NOT NULL COMMENT '起始號碼',
+    end_number              BIGINT UNSIGNED                     NOT NULL COMMENT '結束號碼',
+    current_number          BIGINT UNSIGNED                     NOT NULL COMMENT '目前使用號碼',
+    reserved_count          INT                                 NOT NULL DEFAULT 0 COMMENT '保留數量',
+    used_count              INT                                 NOT NULL DEFAULT 0 COMMENT '已使用數量',
+    void_count              INT                                 NOT NULL DEFAULT 0 COMMENT '作廢數量',
+    track_status            VARCHAR(20)                         NOT NULL DEFAULT 'ACTIVE' COMMENT 'ACTIVE使用中;EXHAUSTED用罄;CLOSED結束;CANCELLED取消',
+    avalible                VARCHAR(2)                          NOT NULL DEFAULT 'Y' COMMENT 'Y可用;D刪除;W停用',
+    remark                  TEXT                                    NULL COMMENT '備註',
+    CONSTRAINT uk_tit_track UNIQUE (company_sid, business_unit_sid, invoice_year, invoice_period, track_code),
+    INDEX idx_tit_company_sid (company_sid),
+    INDEX idx_tit_business_unit_sid (business_unit_sid),
+    INDEX idx_tit_invoice_year_period (invoice_year, invoice_period),
+    INDEX idx_tit_invoice_type (invoice_type),
+    INDEX idx_tit_status (track_status),
+    INDEX idx_tit_avalible (avalible),
+    CHECK (invoice_year > 0),
+    CHECK (end_number >= start_number),
+    CHECK (current_number >= start_number),
+    CHECK (current_number <= end_number + 1),
+    CHECK (reserved_count >= 0),
+    CHECK (used_count >= 0),
+    CHECK (void_count >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='電子發票字軌與號碼區間';
+
+CREATE TABLE IF NOT EXISTS tax_invoice_number (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '發票號碼序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    invoice_track_sid       VARCHAR(32)                         NOT NULL COMMENT '發票字軌序號',
+    invoice_number          VARCHAR(20)                         NOT NULL COMMENT '完整發票號碼',
+    number_value            BIGINT UNSIGNED                     NOT NULL COMMENT '數字部分',
+    reserved_reference_type VARCHAR(30)                             NULL COMMENT 'ORDER;PAYMENT;INVOICE_REQUEST;MANUAL',
+    reserved_reference_sid  VARCHAR(32)                             NULL COMMENT '保留來源序號',
+    reserved_date           DATETIME                                NULL COMMENT '保留時間',
+    reservation_expiry_date DATETIME                                NULL COMMENT '保留到期時間',
+    invoice_sid             VARCHAR(32)                             NULL COMMENT '正式發票序號',
+    number_status           VARCHAR(20)                         NOT NULL DEFAULT 'AVAILABLE' COMMENT 'AVAILABLE可用;RESERVED已保留;USED已使用;VOID作廢;CANCELLED取消',
+    CONSTRAINT uk_tin_invoice_number UNIQUE (invoice_number),
+    CONSTRAINT uk_tin_track_number UNIQUE (invoice_track_sid, number_value),
+    INDEX idx_tin_invoice_track_sid (invoice_track_sid),
+    INDEX idx_tin_reserved_reference (reserved_reference_type, reserved_reference_sid),
+    INDEX idx_tin_invoice_sid (invoice_sid),
+    INDEX idx_tin_reservation_expiry_date (reservation_expiry_date),
+    INDEX idx_tin_status (number_status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='發票號碼使用與保留紀錄';
+
+-- =========================================================
+-- 03. 銷項發票
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS tax_sales_invoice (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '銷項發票序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    modify_date             DATETIME                                NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP COMMENT '修改日期',
+    invoice_no              VARCHAR(100)                        NOT NULL COMMENT '內部發票單號',
+    invoice_number          VARCHAR(20)                             NULL COMMENT '政府發票號碼',
+    invoice_track_sid       VARCHAR(32)                             NULL COMMENT '發票字軌序號',
+    invoice_policy_sid      VARCHAR(32)                             NULL COMMENT '發票政策序號',
+    company_sid             VARCHAR(32)                         NOT NULL COMMENT '賣方公司序號',
+    business_unit_sid       VARCHAR(32)                             NULL COMMENT '營業單位序號',
+    seller_party_sid        VARCHAR(32)                             NULL COMMENT '賣方Party序號',
+    buyer_party_sid         VARCHAR(32)                             NULL COMMENT '買方Party序號',
+    sales_order_sid         VARCHAR(32)                             NULL COMMENT 'SalesOrderDB訂單序號',
+    payment_request_sid     VARCHAR(32)                             NULL COMMENT 'PaymentDB付款請求序號',
+    fulfillment_sid         VARCHAR(32)                             NULL COMMENT 'FulfillmentDB履約單序號',
+    receivable_sid          VARCHAR(32)                             NULL COMMENT 'AccountingDB應收序號',
+    contract_sid            VARCHAR(32)                             NULL COMMENT '合約序號',
+    project_sid             VARCHAR(32)                             NULL COMMENT '專案序號',
+    invoice_date            DATETIME                            NOT NULL COMMENT '開立時間',
+    invoice_type            VARCHAR(30)                         NOT NULL COMMENT 'B2C;B2B;GENERAL一般;SPECIAL特種;DONATION捐贈;OTHER',
+    currency_sid            VARCHAR(32)                         NOT NULL COMMENT '幣別序號',
+    exchange_rate           DECIMAL(20,10)                      NOT NULL DEFAULT 1 COMMENT '匯率',
+    sales_amount            DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '未稅銷售額',
+    tax_amount              DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '稅額',
+    total_amount            DECIMAL(20,4)                       NOT NULL COMMENT '含稅總額',
+    taxable_amount          DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '應稅銷售額',
+    zero_rate_amount        DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '零稅率銷售額',
+    exempt_amount           DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '免稅銷售額',
+    buyer_tax_no            VARCHAR(50)                             NULL COMMENT '買方統一編號',
+    buyer_name              VARCHAR(300)                            NULL COMMENT '買方名稱快照',
+    buyer_email             VARCHAR(200)                            NULL COMMENT '買方Email',
+    buyer_phone             VARCHAR(50)                             NULL COMMENT '買方電話',
+    random_number           VARCHAR(10)                             NULL COMMENT '電子發票隨機碼',
+    carrier_type            VARCHAR(30)                             NULL COMMENT 'MOBILE手機條碼;CERT自然人憑證;MEMBER會員載具;PLATFORM平台載具;NONE無',
+    carrier_no_hash         VARCHAR(255)                            NULL COMMENT '載具號碼雜湊',
+    carrier_no_encrypted    LONGTEXT                                NULL COMMENT '載具號碼加密值',
+    donation_code           VARCHAR(50)                             NULL COMMENT '捐贈碼',
+    print_mark              TINYINT(1)                          NOT NULL DEFAULT 0 COMMENT '是否列印',
+    customs_clearance_mark  VARCHAR(20)                             NULL COMMENT '通關方式',
+    invoice_status          VARCHAR(30)                         NOT NULL DEFAULT 'DRAFT' COMMENT 'DRAFT草稿;ISSUING開立中;ISSUED已開立;FAILED失敗;VOIDED作廢;ALLOWANCED已折讓;PARTIAL_ALLOWANCED部分折讓;CANCELLED取消',
+    platform_submit_status  VARCHAR(20)                         NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING待上傳;SUBMITTED已上傳;ACCEPTED接受;REJECTED拒絕',
+    platform_invoice_id     VARCHAR(200)                            NULL COMMENT '電子發票平台識別碼',
+    qr_code_left            TEXT                                    NULL COMMENT 'QR Code左側內容',
+    qr_code_right           TEXT                                    NULL COMMENT 'QR Code右側內容',
+    bar_code                VARCHAR(100)                            NULL COMMENT '一維條碼內容',
+    issued_user_sid         VARCHAR(32)                             NULL COMMENT '開立人員序號',
+    issued_date             DATETIME                                NULL COMMENT '完成開立時間',
+    correlation_id          VARCHAR(100)                            NULL COMMENT '跨服務關聯識別碼',
+    version_no              BIGINT UNSIGNED                     NOT NULL DEFAULT 0 COMMENT '樂觀鎖版本',
+    avalible                VARCHAR(2)                          NOT NULL DEFAULT 'Y' COMMENT 'Y可用;D刪除;W停用',
+    remark                  TEXT                                    NULL COMMENT '備註',
+    CONSTRAINT uk_tsi_invoice_no UNIQUE (invoice_no),
+    UNIQUE KEY uk_tsi_invoice_number (invoice_number),
+    INDEX idx_tsi_company_sid (company_sid),
+    INDEX idx_tsi_buyer_party_sid (buyer_party_sid),
+    INDEX idx_tsi_sales_order_sid (sales_order_sid),
+    INDEX idx_tsi_payment_request_sid (payment_request_sid),
+    INDEX idx_tsi_fulfillment_sid (fulfillment_sid),
+    INDEX idx_tsi_receivable_sid (receivable_sid),
+    INDEX idx_tsi_contract_sid (contract_sid),
+    INDEX idx_tsi_project_sid (project_sid),
+    INDEX idx_tsi_invoice_date (invoice_date),
+    INDEX idx_tsi_invoice_type (invoice_type),
+    INDEX idx_tsi_buyer_tax_no (buyer_tax_no),
+    INDEX idx_tsi_status (invoice_status),
+    INDEX idx_tsi_platform_submit_status (platform_submit_status),
+    INDEX idx_tsi_correlation_id (correlation_id),
+    INDEX idx_tsi_avalible (avalible),
+    CHECK (exchange_rate > 0),
+    CHECK (sales_amount >= 0),
+    CHECK (tax_amount >= 0),
+    CHECK (total_amount > 0),
+    CHECK (taxable_amount >= 0),
+    CHECK (zero_rate_amount >= 0),
+    CHECK (exempt_amount >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='銷項與電子發票主檔';
+
+CREATE TABLE IF NOT EXISTS tax_sales_invoice_item (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '銷項發票明細序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    sales_invoice_nid       BIGINT UNSIGNED                     NOT NULL COMMENT '銷項發票流水號',
+    line_no                 INT                                 NOT NULL COMMENT '明細行號',
+    sales_order_item_sid    VARCHAR(32)                             NULL COMMENT 'SalesOrderDB訂單明細序號',
+    item_sid                VARCHAR(32)                             NULL COMMENT 'Item序號',
+    variant_sid             VARCHAR(32)                             NULL COMMENT '變體序號',
+    item_name               VARCHAR(500)                        NOT NULL COMMENT '品名快照',
+    item_description        VARCHAR(1000)                           NULL COMMENT '品項說明',
+    quantity                DECIMAL(20,6)                       NOT NULL COMMENT '數量',
+    unit_sid                VARCHAR(32)                             NULL COMMENT '單位序號',
+    unit_price              DECIMAL(20,6)                       NOT NULL COMMENT '未稅或含稅單價快照',
+    sales_amount            DECIMAL(20,4)                       NOT NULL COMMENT '銷售額',
+    discount_amount         DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '折扣金額',
+    tax_type_sid            VARCHAR(32)                         NOT NULL COMMENT '稅別序號',
+    tax_rate                DECIMAL(8,4)                        NOT NULL DEFAULT 0 COMMENT '稅率快照',
+    tax_amount              DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '稅額',
+    total_amount            DECIMAL(20,4)                       NOT NULL COMMENT '含稅總額',
+    project_sid             VARCHAR(32)                             NULL COMMENT '專案序號',
+    wbs_sid                 VARCHAR(32)                             NULL COMMENT 'WBS序號',
+    remark                  TEXT                                    NULL COMMENT '備註',
+    CONSTRAINT fk_tsii_invoice
+        FOREIGN KEY (sales_invoice_nid) REFERENCES tax_sales_invoice(nid),
+    CONSTRAINT uk_tsii_invoice_line UNIQUE (sales_invoice_nid, line_no),
+    INDEX idx_tsii_invoice_nid (sales_invoice_nid),
+    INDEX idx_tsii_sales_order_item_sid (sales_order_item_sid),
+    INDEX idx_tsii_item_sid (item_sid),
+    INDEX idx_tsii_variant_sid (variant_sid),
+    INDEX idx_tsii_tax_type_sid (tax_type_sid),
+    INDEX idx_tsii_project_sid (project_sid),
+    INDEX idx_tsii_wbs_sid (wbs_sid),
+    CHECK (line_no > 0),
+    CHECK (quantity > 0),
+    CHECK (unit_price >= 0),
+    CHECK (sales_amount >= 0),
+    CHECK (discount_amount >= 0),
+    CHECK (tax_rate >= 0),
+    CHECK (tax_amount >= 0),
+    CHECK (total_amount >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='銷項發票明細';
+
+-- =========================================================
+-- 04. 進項發票
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS tax_purchase_invoice (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '進項發票序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    modify_date             DATETIME                                NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP COMMENT '修改日期',
+    purchase_invoice_no     VARCHAR(100)                        NOT NULL COMMENT '內部進項發票編號',
+    supplier_invoice_no     VARCHAR(100)                        NOT NULL COMMENT '供應商發票號碼',
+    company_sid             VARCHAR(32)                         NOT NULL COMMENT '買方公司序號',
+    supplier_party_sid      VARCHAR(32)                         NOT NULL COMMENT '供應商Party序號',
+    purchase_order_sid      VARCHAR(32)                             NULL COMMENT 'PurchaseDB採購單序號',
+    receipt_sid             VARCHAR(32)                             NULL COMMENT 'PurchaseDB收貨單序號',
+    payable_sid             VARCHAR(32)                             NULL COMMENT 'AccountingDB應付序號',
+    contract_sid            VARCHAR(32)                             NULL COMMENT '合約序號',
+    project_sid             VARCHAR(32)                             NULL COMMENT '專案序號',
+    invoice_date            DATE                                NOT NULL COMMENT '發票日期',
+    received_date           DATE                                NOT NULL COMMENT '收到日期',
+    accounting_period_sid   VARCHAR(32)                             NULL COMMENT '會計期間序號',
+    currency_sid            VARCHAR(32)                         NOT NULL COMMENT '幣別序號',
+    exchange_rate           DECIMAL(20,10)                      NOT NULL DEFAULT 1 COMMENT '匯率',
+    purchase_amount         DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '未稅金額',
+    tax_amount              DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '進項稅額',
+    total_amount            DECIMAL(20,4)                       NOT NULL COMMENT '含稅總額',
+    deductible_tax_amount   DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '可扣抵稅額',
+    non_deductible_tax_amount DECIMAL(20,4)                     NOT NULL DEFAULT 0 COMMENT '不可扣抵稅額',
+    supplier_tax_no         VARCHAR(50)                             NULL COMMENT '供應商統一編號',
+    supplier_name           VARCHAR(300)                            NULL COMMENT '供應商名稱快照',
+    verification_status     VARCHAR(20)                         NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING待驗證;VALID有效;INVALID無效;DUPLICATE重複;EXCEPTION異常',
+    matching_status         VARCHAR(20)                         NOT NULL DEFAULT 'UNMATCHED' COMMENT 'UNMATCHED未匹配;PARTIAL部分匹配;MATCHED已匹配;DIFFERENCE有差異',
+    invoice_status          VARCHAR(20)                         NOT NULL DEFAULT 'RECEIVED' COMMENT 'RECEIVED已收到;VERIFIED已驗證;BOOKED已入帳;ALLOWANCED已折讓;VOIDED作廢;REJECTED拒收',
+    source_file_sid         VARCHAR(32)                             NULL COMMENT 'FileDB發票影像或電子檔序號',
+    verified_user_sid       VARCHAR(32)                             NULL COMMENT '驗證人員序號',
+    verified_date           DATETIME                                NULL COMMENT '驗證時間',
+    correlation_id          VARCHAR(100)                            NULL COMMENT '跨服務關聯識別碼',
+    version_no              BIGINT UNSIGNED                     NOT NULL DEFAULT 0 COMMENT '樂觀鎖版本',
+    avalible                VARCHAR(2)                          NOT NULL DEFAULT 'Y' COMMENT 'Y可用;D刪除;W停用',
+    remark                  TEXT                                    NULL COMMENT '備註',
+    CONSTRAINT uk_tpi_purchase_invoice_no UNIQUE (purchase_invoice_no),
+    CONSTRAINT uk_tpi_supplier_invoice UNIQUE (supplier_party_sid, supplier_invoice_no),
+    INDEX idx_tpi_company_sid (company_sid),
+    INDEX idx_tpi_supplier_party_sid (supplier_party_sid),
+    INDEX idx_tpi_purchase_order_sid (purchase_order_sid),
+    INDEX idx_tpi_receipt_sid (receipt_sid),
+    INDEX idx_tpi_payable_sid (payable_sid),
+    INDEX idx_tpi_contract_sid (contract_sid),
+    INDEX idx_tpi_project_sid (project_sid),
+    INDEX idx_tpi_invoice_date (invoice_date),
+    INDEX idx_tpi_accounting_period_sid (accounting_period_sid),
+    INDEX idx_tpi_verification_status (verification_status),
+    INDEX idx_tpi_matching_status (matching_status),
+    INDEX idx_tpi_invoice_status (invoice_status),
+    INDEX idx_tpi_correlation_id (correlation_id),
+    INDEX idx_tpi_avalible (avalible),
+    CHECK (exchange_rate > 0),
+    CHECK (purchase_amount >= 0),
+    CHECK (tax_amount >= 0),
+    CHECK (total_amount > 0),
+    CHECK (deductible_tax_amount >= 0),
+    CHECK (non_deductible_tax_amount >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='進項發票主檔';
+
+CREATE TABLE IF NOT EXISTS tax_purchase_invoice_item (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '進項發票明細序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    purchase_invoice_nid    BIGINT UNSIGNED                     NOT NULL COMMENT '進項發票流水號',
+    line_no                 INT                                 NOT NULL COMMENT '明細行號',
+    purchase_order_item_sid VARCHAR(32)                             NULL COMMENT 'PurchaseDB採購明細序號',
+    receipt_item_sid        VARCHAR(32)                             NULL COMMENT 'PurchaseDB收貨明細序號',
+    item_sid                VARCHAR(32)                             NULL COMMENT 'Item序號',
+    variant_sid             VARCHAR(32)                             NULL COMMENT '變體序號',
+    item_name               VARCHAR(500)                        NOT NULL COMMENT '品名快照',
+    quantity                DECIMAL(20,6)                           NULL COMMENT '數量',
+    unit_sid                VARCHAR(32)                             NULL COMMENT '單位序號',
+    unit_price              DECIMAL(20,6)                           NULL COMMENT '單價',
+    purchase_amount         DECIMAL(20,4)                       NOT NULL COMMENT '未稅金額',
+    tax_type_sid            VARCHAR(32)                         NOT NULL COMMENT '稅別序號',
+    tax_rate                DECIMAL(8,4)                        NOT NULL DEFAULT 0 COMMENT '稅率快照',
+    tax_amount              DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '稅額',
+    total_amount            DECIMAL(20,4)                       NOT NULL COMMENT '含稅總額',
+    project_sid             VARCHAR(32)                             NULL COMMENT '專案序號',
+    site_sid                VARCHAR(32)                             NULL COMMENT '工地序號',
+    wbs_sid                 VARCHAR(32)                             NULL COMMENT 'WBS序號',
+    cost_center_sid         VARCHAR(32)                             NULL COMMENT '成本中心序號',
+    expense_account_sid     VARCHAR(32)                             NULL COMMENT '費用或成本科目序號',
+    CONSTRAINT fk_tpii_invoice
+        FOREIGN KEY (purchase_invoice_nid) REFERENCES tax_purchase_invoice(nid),
+    CONSTRAINT uk_tpii_invoice_line UNIQUE (purchase_invoice_nid, line_no),
+    INDEX idx_tpii_invoice_nid (purchase_invoice_nid),
+    INDEX idx_tpii_purchase_order_item_sid (purchase_order_item_sid),
+    INDEX idx_tpii_receipt_item_sid (receipt_item_sid),
+    INDEX idx_tpii_item_sid (item_sid),
+    INDEX idx_tpii_variant_sid (variant_sid),
+    INDEX idx_tpii_tax_type_sid (tax_type_sid),
+    INDEX idx_tpii_project_sid (project_sid),
+    INDEX idx_tpii_site_sid (site_sid),
+    INDEX idx_tpii_wbs_sid (wbs_sid),
+    INDEX idx_tpii_cost_center_sid (cost_center_sid),
+    CHECK (line_no > 0),
+    CHECK (quantity IS NULL OR quantity > 0),
+    CHECK (unit_price IS NULL OR unit_price >= 0),
+    CHECK (purchase_amount >= 0),
+    CHECK (tax_rate >= 0),
+    CHECK (tax_amount >= 0),
+    CHECK (total_amount >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='進項發票明細';
+
+-- =========================================================
+-- 05. 發票請求與開立工作
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS tax_invoice_request (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '發票請求序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    modify_date             DATETIME                                NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP COMMENT '修改日期',
+    request_no              VARCHAR(100)                        NOT NULL COMMENT '發票請求編號',
+    request_type            VARCHAR(30)                         NOT NULL COMMENT 'SALES銷項;PURCHASE進項;ALLOWANCE折讓;VOID作廢;REISSUE重開',
+    source_type             VARCHAR(30)                         NOT NULL COMMENT 'SALES_ORDER;PAYMENT;FULFILLMENT;PURCHASE_ORDER;RECEIPT;RETURN;ACCOUNTING;MANUAL',
+    source_sid              VARCHAR(32)                         NOT NULL COMMENT '來源資料序號',
+    party_sid               VARCHAR(32)                             NULL COMMENT '買方或供應商Party序號',
+    company_sid             VARCHAR(32)                         NOT NULL COMMENT '公司序號',
+    invoice_policy_sid      VARCHAR(32)                             NULL COMMENT '發票政策序號',
+    request_data            JSON                                NOT NULL COMMENT '開票請求資料',
+    requested_date          DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '請求時間',
+    issue_due_date          DATETIME                                NULL COMMENT '最晚開立時間',
+    idempotency_key         VARCHAR(200)                        NOT NULL COMMENT '冪等Key',
+    request_status          VARCHAR(20)                         NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING待處理;VALIDATING驗證中;PROCESSING處理中;SUCCESS成功;FAILED失敗;CANCELLED取消',
+    invoice_sid             VARCHAR(32)                             NULL COMMENT '建立完成的發票序號',
+    retry_count             INT                                 NOT NULL DEFAULT 0 COMMENT '重試次數',
+    correlation_id          VARCHAR(100)                            NULL COMMENT '跨服務關聯識別碼',
+    completed_date          DATETIME                                NULL COMMENT '完成時間',
+    error_message           LONGTEXT                                NULL COMMENT '錯誤訊息',
+    CONSTRAINT uk_tir_request_no UNIQUE (request_no),
+    CONSTRAINT uk_tir_idempotency_key UNIQUE (idempotency_key),
+    INDEX idx_tir_request_type (request_type),
+    INDEX idx_tir_source (source_type, source_sid),
+    INDEX idx_tir_party_sid (party_sid),
+    INDEX idx_tir_company_sid (company_sid),
+    INDEX idx_tir_invoice_policy_sid (invoice_policy_sid),
+    INDEX idx_tir_issue_due_date (issue_due_date),
+    INDEX idx_tir_status (request_status),
+    INDEX idx_tir_invoice_sid (invoice_sid),
+    INDEX idx_tir_correlation_id (correlation_id),
+    CHECK (retry_count >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='銷項、進項、作廢與折讓請求';
+
+-- =========================================================
+-- 06. 作廢
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS tax_invoice_void (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '發票作廢序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    void_no                 VARCHAR(100)                        NOT NULL COMMENT '作廢編號',
+    invoice_type            VARCHAR(20)                         NOT NULL COMMENT 'SALES銷項;PURCHASE進項',
+    invoice_sid             VARCHAR(32)                         NOT NULL COMMENT '原發票序號',
+    invoice_number          VARCHAR(20)                             NULL COMMENT '原發票號碼',
+    void_date               DATETIME                            NOT NULL COMMENT '作廢時間',
+    reason_code             VARCHAR(50)                         NOT NULL COMMENT '作廢原因代碼',
+    reason                  TEXT                                NOT NULL COMMENT '作廢原因',
+    requested_user_sid      VARCHAR(32)                             NULL COMMENT '申請人員序號',
+    approved_user_sid       VARCHAR(32)                             NULL COMMENT '核准人員序號',
+    workflow_instance_sid   VARCHAR(32)                             NULL COMMENT 'WorkflowDB流程實例序號',
+    platform_submit_status  VARCHAR(20)                         NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING待上傳;SUBMITTED已上傳;ACCEPTED接受;REJECTED拒絕',
+    void_status             VARCHAR(20)                         NOT NULL DEFAULT 'DRAFT' COMMENT 'DRAFT草稿;APPROVED核准;SUBMITTED已送平台;COMPLETED完成;REJECTED駁回;CANCELLED取消',
+    completed_date          DATETIME                                NULL COMMENT '完成時間',
+    correlation_id          VARCHAR(100)                            NULL COMMENT '跨服務關聯識別碼',
+    CONSTRAINT uk_tiv_void_no UNIQUE (void_no),
+    INDEX idx_tiv_invoice_type (invoice_type),
+    INDEX idx_tiv_invoice_sid (invoice_sid),
+    INDEX idx_tiv_invoice_number (invoice_number),
+    INDEX idx_tiv_void_date (void_date),
+    INDEX idx_tiv_workflow_instance_sid (workflow_instance_sid),
+    INDEX idx_tiv_platform_submit_status (platform_submit_status),
+    INDEX idx_tiv_status (void_status),
+    INDEX idx_tiv_correlation_id (correlation_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='銷項與進項發票作廢';
+
+-- =========================================================
+-- 07. 折讓與退貨調整
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS tax_allowance (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '發票折讓序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    modify_date             DATETIME                                NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP COMMENT '修改日期',
+    allowance_no            VARCHAR(100)                        NOT NULL COMMENT '折讓單號',
+    allowance_number        VARCHAR(50)                             NULL COMMENT '平台折讓號碼',
+    allowance_type          VARCHAR(20)                         NOT NULL COMMENT 'SALES銷項折讓;PURCHASE進項折讓',
+    invoice_sid             VARCHAR(32)                         NOT NULL COMMENT '原發票序號',
+    invoice_number          VARCHAR(20)                             NULL COMMENT '原發票號碼',
+    return_case_sid         VARCHAR(32)                             NULL COMMENT 'ReturnAfterSalesDB售後案件序號',
+    supplier_claim_sid      VARCHAR(32)                             NULL COMMENT '供應商追償序號',
+    credit_debit_note_sid   VARCHAR(32)                             NULL COMMENT 'AccountingDB借貸項序號',
+    party_sid               VARCHAR(32)                         NOT NULL COMMENT '買方或供應商Party序號',
+    allowance_date          DATETIME                            NOT NULL COMMENT '折讓日期',
+    sales_amount            DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '折讓未稅金額',
+    tax_amount              DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '折讓稅額',
+    total_amount            DECIMAL(20,4)                       NOT NULL COMMENT '折讓總額',
+    reason_code             VARCHAR(50)                         NOT NULL COMMENT '折讓原因代碼',
+    reason                  TEXT                                    NULL COMMENT '折讓原因',
+    allowance_status        VARCHAR(30)                         NOT NULL DEFAULT 'DRAFT' COMMENT 'DRAFT草稿;APPROVED核准;SUBMITTED已上傳;COMPLETED完成;REJECTED駁回;VOIDED作廢;CANCELLED取消',
+    platform_submit_status  VARCHAR(20)                         NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING待上傳;SUBMITTED已上傳;ACCEPTED接受;REJECTED拒絕',
+    workflow_instance_sid   VARCHAR(32)                             NULL COMMENT 'WorkflowDB流程實例序號',
+    completed_date          DATETIME                                NULL COMMENT '完成時間',
+    correlation_id          VARCHAR(100)                            NULL COMMENT '跨服務關聯識別碼',
+    CONSTRAINT uk_ta_allowance_no UNIQUE (allowance_no),
+    UNIQUE KEY uk_ta_allowance_number (allowance_number),
+    INDEX idx_ta_allowance_type (allowance_type),
+    INDEX idx_ta_invoice_sid (invoice_sid),
+    INDEX idx_ta_invoice_number (invoice_number),
+    INDEX idx_ta_return_case_sid (return_case_sid),
+    INDEX idx_ta_supplier_claim_sid (supplier_claim_sid),
+    INDEX idx_ta_credit_debit_note_sid (credit_debit_note_sid),
+    INDEX idx_ta_party_sid (party_sid),
+    INDEX idx_ta_allowance_date (allowance_date),
+    INDEX idx_ta_status (allowance_status),
+    INDEX idx_ta_platform_submit_status (platform_submit_status),
+    INDEX idx_ta_correlation_id (correlation_id),
+    CHECK (sales_amount >= 0),
+    CHECK (tax_amount >= 0),
+    CHECK (total_amount > 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='銷項與進項發票折讓';
+
+CREATE TABLE IF NOT EXISTS tax_allowance_item (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '發票折讓明細序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    allowance_nid           BIGINT UNSIGNED                     NOT NULL COMMENT '折讓流水號',
+    line_no                 INT                                 NOT NULL COMMENT '明細行號',
+    original_invoice_item_sid VARCHAR(32)                       NOT NULL COMMENT '原發票明細序號',
+    item_sid                VARCHAR(32)                             NULL COMMENT 'Item序號',
+    item_name               VARCHAR(500)                        NOT NULL COMMENT '品名快照',
+    quantity                DECIMAL(20,6)                       NOT NULL COMMENT '折讓數量',
+    unit_sid                VARCHAR(32)                             NULL COMMENT '單位序號',
+    sales_amount            DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '折讓未稅金額',
+    tax_type_sid            VARCHAR(32)                         NOT NULL COMMENT '稅別序號',
+    tax_rate                DECIMAL(8,4)                        NOT NULL DEFAULT 0 COMMENT '稅率',
+    tax_amount              DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '折讓稅額',
+    total_amount            DECIMAL(20,4)                       NOT NULL COMMENT '折讓總額',
+    CONSTRAINT fk_tai_allowance
+        FOREIGN KEY (allowance_nid) REFERENCES tax_allowance(nid),
+    CONSTRAINT uk_tai_allowance_line UNIQUE (allowance_nid, line_no),
+    INDEX idx_tai_allowance_nid (allowance_nid),
+    INDEX idx_tai_original_invoice_item_sid (original_invoice_item_sid),
+    INDEX idx_tai_item_sid (item_sid),
+    INDEX idx_tai_tax_type_sid (tax_type_sid),
+    CHECK (line_no > 0),
+    CHECK (quantity > 0),
+    CHECK (sales_amount >= 0),
+    CHECK (tax_rate >= 0),
+    CHECK (tax_amount >= 0),
+    CHECK (total_amount > 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='發票折讓明細';
+
+-- =========================================================
+-- 08. 載具、捐贈與買受人資料
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS tax_carrier (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '載具序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    modify_date             DATETIME                                NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP COMMENT '修改日期',
+    party_sid               VARCHAR(32)                             NULL COMMENT 'Party序號',
+    carrier_type            VARCHAR(30)                         NOT NULL COMMENT 'MOBILE手機條碼;CERT自然人憑證;MEMBER會員載具;PLATFORM平台載具;OTHER',
+    carrier_no_hash         VARCHAR(255)                        NOT NULL COMMENT '載具號碼雜湊',
+    carrier_no_encrypted    LONGTEXT                            NOT NULL COMMENT '加密後載具號碼',
+    carrier_no_masked       VARCHAR(200)                            NULL COMMENT '遮罩載具號碼',
+    default_mark            TINYINT(1)                          NOT NULL DEFAULT 0 COMMENT '是否預設載具',
+    verified_mark           TINYINT(1)                          NOT NULL DEFAULT 0 COMMENT '是否已驗證',
+    verified_date           DATETIME                                NULL COMMENT '驗證時間',
+    carrier_status          VARCHAR(20)                         NOT NULL DEFAULT 'ACTIVE' COMMENT 'ACTIVE有效;INACTIVE停用;REVOKED撤銷',
+    CONSTRAINT uk_tc_carrier_hash UNIQUE (carrier_type, carrier_no_hash),
+    INDEX idx_tc_party_sid (party_sid),
+    INDEX idx_tc_carrier_type (carrier_type),
+    INDEX idx_tc_default_mark (default_mark),
+    INDEX idx_tc_verified_mark (verified_mark),
+    INDEX idx_tc_status (carrier_status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='電子發票載具';
+
+CREATE TABLE IF NOT EXISTS tax_donation_code (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '捐贈碼序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    modify_date             DATETIME                                NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP COMMENT '修改日期',
+    donation_code           VARCHAR(50)                         NOT NULL COMMENT '捐贈碼',
+    organization_party_sid  VARCHAR(32)                             NULL COMMENT '受贈組織Party序號',
+    organization_name       VARCHAR(300)                        NOT NULL COMMENT '受贈組織名稱',
+    effective_start_date    DATE                                NOT NULL COMMENT '生效日',
+    effective_end_date      DATE                                    NULL COMMENT '失效日',
+    donation_status         VARCHAR(20)                         NOT NULL DEFAULT 'ACTIVE' COMMENT 'ACTIVE有效;INACTIVE停用;EXPIRED過期',
+    avalible                VARCHAR(2)                          NOT NULL DEFAULT 'Y' COMMENT 'Y可用;D刪除;W停用',
+    CONSTRAINT uk_tdc_donation_code UNIQUE (donation_code),
+    INDEX idx_tdc_organization_party_sid (organization_party_sid),
+    INDEX idx_tdc_effective_date (effective_start_date, effective_end_date),
+    INDEX idx_tdc_status (donation_status),
+    INDEX idx_tdc_avalible (avalible),
+    CHECK (effective_end_date IS NULL OR effective_end_date >= effective_start_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='電子發票捐贈碼';
+
+-- =========================================================
+-- 09. 三方匹配與稅務驗證
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS tax_invoice_match (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '發票匹配序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    modify_date             DATETIME                                NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP COMMENT '修改日期',
+    invoice_type            VARCHAR(20)                         NOT NULL COMMENT 'SALES銷項;PURCHASE進項',
+    invoice_sid             VARCHAR(32)                         NOT NULL COMMENT '發票序號',
+    match_type              VARCHAR(30)                         NOT NULL COMMENT 'TWO_WAY二方;THREE_WAY三方;FOUR_WAY四方',
+    order_sid               VARCHAR(32)                             NULL COMMENT '銷售或採購單序號',
+    receipt_sid             VARCHAR(32)                             NULL COMMENT '收貨或履約序號',
+    inspection_sid          VARCHAR(32)                             NULL COMMENT '驗收或檢測序號',
+    accounting_sid          VARCHAR(32)                             NULL COMMENT '應收或應付序號',
+    amount_difference       DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '金額差異',
+    tax_difference          DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '稅額差異',
+    quantity_difference     DECIMAL(20,6)                       NOT NULL DEFAULT 0 COMMENT '數量差異',
+    tolerance_amount        DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '容許差異',
+    match_result            VARCHAR(20)                         NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING待比對;MATCHED一致;PARTIAL部分一致;DIFFERENCE有差異;FAILED失敗',
+    matched_user_sid        VARCHAR(32)                             NULL COMMENT '比對人員序號',
+    matched_date            DATETIME                                NULL COMMENT '比對時間',
+    resolution_note         TEXT                                    NULL COMMENT '差異處理說明',
+    INDEX idx_tim_invoice (invoice_type, invoice_sid),
+    INDEX idx_tim_match_type (match_type),
+    INDEX idx_tim_order_sid (order_sid),
+    INDEX idx_tim_receipt_sid (receipt_sid),
+    INDEX idx_tim_inspection_sid (inspection_sid),
+    INDEX idx_tim_accounting_sid (accounting_sid),
+    INDEX idx_tim_result (match_result),
+    CHECK (tolerance_amount >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='訂單、收貨、驗收與發票匹配';
+
+CREATE TABLE IF NOT EXISTS tax_validation_log (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '稅務驗證紀錄序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    entity_type             VARCHAR(30)                         NOT NULL COMMENT 'SALES_INVOICE;PURCHASE_INVOICE;ALLOWANCE;VOID;CARRIER;TAX_NO',
+    entity_sid              VARCHAR(32)                         NOT NULL COMMENT '實體序號',
+    validation_type         VARCHAR(30)                         NOT NULL COMMENT 'FORMAT格式;DUPLICATE重複;TAX_NO統編;AMOUNT金額;TAX稅額;PLATFORM平台;PERIOD期間',
+    validation_result       VARCHAR(20)                         NOT NULL COMMENT 'PASS通過;WARNING警告;FAIL失敗',
+    validation_code         VARCHAR(100)                            NULL COMMENT '驗證代碼',
+    validation_message      VARCHAR(2000)                           NULL COMMENT '驗證訊息',
+    validation_data         JSON                                    NULL COMMENT '驗證資料',
+    validator_type          VARCHAR(20)                         NOT NULL DEFAULT 'SYSTEM' COMMENT 'SYSTEM系統;PLATFORM平台;USER人工',
+    validator_sid           VARCHAR(32)                             NULL COMMENT '驗證者序號',
+    INDEX idx_tvl_entity (entity_type, entity_sid),
+    INDEX idx_tvl_validation_type (validation_type),
+    INDEX idx_tvl_validation_result (validation_result),
+    INDEX idx_tvl_create_date (create_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='發票與稅務驗證紀錄';
+
+-- =========================================================
+-- 10. 電子發票平台交換
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS tax_platform_message (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '平台交換訊息序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    message_no              VARCHAR(100)                        NOT NULL COMMENT '交換訊息編號',
+    platform_code           VARCHAR(100)                        NOT NULL COMMENT '電子發票平台代碼',
+    message_type            VARCHAR(50)                         NOT NULL COMMENT 'ISSUE開立;VOID作廢;ALLOWANCE折讓;ALLOWANCE_VOID折讓作廢;TRACK下載字軌;QUERY查詢;B2B_EXCHANGE交換',
+    direction               VARCHAR(10)                         NOT NULL COMMENT 'OUTBOUND送出;INBOUND接收',
+    entity_type             VARCHAR(30)                         NOT NULL COMMENT 'SALES_INVOICE;PURCHASE_INVOICE;ALLOWANCE;VOID;TRACK',
+    entity_sid              VARCHAR(32)                         NOT NULL COMMENT '實體序號',
+    request_payload         LONGTEXT                                NULL COMMENT '送出原始內容',
+    response_payload        LONGTEXT                                NULL COMMENT '回應原始內容',
+    provider_message_id     VARCHAR(200)                            NULL COMMENT '平台訊息ID',
+    response_code           VARCHAR(100)                            NULL COMMENT '回應代碼',
+    response_message        VARCHAR(2000)                           NULL COMMENT '回應訊息',
+    send_count              INT                                 NOT NULL DEFAULT 0 COMMENT '送出次數',
+    message_status          VARCHAR(20)                         NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING待送;SENDING送出中;SUCCESS成功;FAILED失敗;RETRY待重試;IGNORED忽略',
+    next_retry_date         DATETIME                                NULL COMMENT '下次重試時間',
+    completed_date          DATETIME                                NULL COMMENT '完成時間',
+    correlation_id          VARCHAR(100)                            NULL COMMENT '跨服務關聯識別碼',
+    CONSTRAINT uk_tpm_message_no UNIQUE (message_no),
+    UNIQUE KEY uk_tpm_provider_message_id (platform_code, provider_message_id),
+    INDEX idx_tpm_platform_code (platform_code),
+    INDEX idx_tpm_message_type (message_type),
+    INDEX idx_tpm_direction (direction),
+    INDEX idx_tpm_entity (entity_type, entity_sid),
+    INDEX idx_tpm_status (message_status),
+    INDEX idx_tpm_next_retry_date (next_retry_date),
+    INDEX idx_tpm_correlation_id (correlation_id),
+    CHECK (send_count >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='電子發票平台API與交換訊息';
+
+-- =========================================================
+-- 11. 稅務申報
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS tax_filing_batch (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '稅務申報批次序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    modify_date             DATETIME                                NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP COMMENT '修改日期',
+    filing_no               VARCHAR(100)                        NOT NULL COMMENT '申報批次編號',
+    company_sid             VARCHAR(32)                         NOT NULL COMMENT '公司序號',
+    filing_type             VARCHAR(30)                         NOT NULL COMMENT 'VAT營業稅;SALES銷項;PURCHASE進項;ZERO_RATE零稅率;WITHHOLDING扣繳;OTHER',
+    period_start_date       DATE                                NOT NULL COMMENT '申報期間開始',
+    period_end_date         DATE                                NOT NULL COMMENT '申報期間結束',
+    filing_year             INT                                 NOT NULL COMMENT '申報年度',
+    filing_period           VARCHAR(20)                         NOT NULL COMMENT '申報期別',
+    currency_sid            VARCHAR(32)                         NOT NULL COMMENT '幣別序號',
+    sales_amount            DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '銷項銷售額',
+    output_tax_amount       DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '銷項稅額',
+    purchase_amount         DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '進項金額',
+    input_tax_amount        DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '進項稅額',
+    deductible_tax_amount   DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '可扣抵稅額',
+    payable_tax_amount      DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '應納稅額',
+    refundable_tax_amount   DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '留抵或退稅額',
+    filing_file_sid         VARCHAR(32)                             NULL COMMENT 'FileDB申報檔序號',
+    receipt_file_sid        VARCHAR(32)                             NULL COMMENT 'FileDB申報回執序號',
+    filing_status           VARCHAR(30)                         NOT NULL DEFAULT 'DRAFT' COMMENT 'DRAFT草稿;CALCULATING計算中;REVIEW待審;APPROVED核准;SUBMITTED已申報;ACCEPTED已受理;REJECTED退件;CLOSED結案',
+    workflow_instance_sid   VARCHAR(32)                             NULL COMMENT 'WorkflowDB流程實例序號',
+    submitted_date          DATETIME                                NULL COMMENT '申報時間',
+    completed_date          DATETIME                                NULL COMMENT '完成時間',
+    CONSTRAINT uk_tfb_filing_no UNIQUE (filing_no),
+    CONSTRAINT uk_tfb_company_period UNIQUE (company_sid, filing_type, period_start_date, period_end_date),
+    INDEX idx_tfb_company_sid (company_sid),
+    INDEX idx_tfb_filing_type (filing_type),
+    INDEX idx_tfb_period (period_start_date, period_end_date),
+    INDEX idx_tfb_filing_year_period (filing_year, filing_period),
+    INDEX idx_tfb_status (filing_status),
+    INDEX idx_tfb_workflow_instance_sid (workflow_instance_sid),
+    CHECK (period_end_date >= period_start_date),
+    CHECK (filing_year > 0),
+    CHECK (sales_amount >= 0),
+    CHECK (output_tax_amount >= 0),
+    CHECK (purchase_amount >= 0),
+    CHECK (input_tax_amount >= 0),
+    CHECK (deductible_tax_amount >= 0),
+    CHECK (payable_tax_amount >= 0),
+    CHECK (refundable_tax_amount >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='營業稅與稅務申報批次';
+
+CREATE TABLE IF NOT EXISTS tax_filing_item (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '稅務申報明細序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    filing_batch_nid        BIGINT UNSIGNED                     NOT NULL COMMENT '申報批次流水號',
+    line_no                 INT                                 NOT NULL COMMENT '明細行號',
+    document_type           VARCHAR(30)                         NOT NULL COMMENT 'SALES_INVOICE;PURCHASE_INVOICE;ALLOWANCE;VOID;ADJUSTMENT',
+    document_sid            VARCHAR(32)                         NOT NULL COMMENT '單據序號',
+    invoice_number          VARCHAR(50)                             NULL COMMENT '發票號碼',
+    document_date           DATE                                NOT NULL COMMENT '單據日期',
+    party_tax_no            VARCHAR(50)                             NULL COMMENT '往來對象統編',
+    sales_amount            DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '銷售或採購額',
+    tax_amount              DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '稅額',
+    deductible_tax_amount   DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '可扣抵稅額',
+    filing_category         VARCHAR(50)                             NULL COMMENT '申報分類',
+    filing_status           VARCHAR(20)                         NOT NULL DEFAULT 'INCLUDED' COMMENT 'INCLUDED已納入;EXCLUDED排除;ADJUSTED調整;ERROR錯誤',
+    error_message           TEXT                                    NULL COMMENT '錯誤訊息',
+    CONSTRAINT fk_tfi_batch
+        FOREIGN KEY (filing_batch_nid) REFERENCES tax_filing_batch(nid),
+    CONSTRAINT uk_tfi_batch_line UNIQUE (filing_batch_nid, line_no),
+    INDEX idx_tfi_batch_nid (filing_batch_nid),
+    INDEX idx_tfi_document (document_type, document_sid),
+    INDEX idx_tfi_invoice_number (invoice_number),
+    INDEX idx_tfi_document_date (document_date),
+    INDEX idx_tfi_party_tax_no (party_tax_no),
+    INDEX idx_tfi_status (filing_status),
+    CHECK (line_no > 0),
+    CHECK (sales_amount >= 0),
+    CHECK (tax_amount >= 0),
+    CHECK (deductible_tax_amount >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='稅務申報發票與折讓明細';
+
+-- =========================================================
+-- 12. 狀態歷程與事件
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS tax_status_history (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '發票稅務狀態歷程序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '異動時間',
+    entity_type             VARCHAR(30)                         NOT NULL COMMENT 'TRACK;NUMBER;SALES_INVOICE;PURCHASE_INVOICE;REQUEST;VOID;ALLOWANCE;PLATFORM_MESSAGE;FILING',
+    entity_sid              VARCHAR(32)                         NOT NULL COMMENT '實體序號',
+    old_status              VARCHAR(30)                             NULL COMMENT '原狀態',
+    new_status              VARCHAR(30)                         NOT NULL COMMENT '新狀態',
+    event_code              VARCHAR(100)                            NULL COMMENT '觸發事件代碼',
+    operator_user_sid       VARCHAR(32)                             NULL COMMENT '操作人員序號',
+    reason                  TEXT                                    NULL COMMENT '原因說明',
+    correlation_id          VARCHAR(100)                            NULL COMMENT '跨服務關聯識別碼',
+    INDEX idx_tsh_entity (entity_type, entity_sid),
+    INDEX idx_tsh_new_status (new_status),
+    INDEX idx_tsh_event_code (event_code),
+    INDEX idx_tsh_operator_user_sid (operator_user_sid),
+    INDEX idx_tsh_correlation_id (correlation_id),
+    INDEX idx_tsh_create_date (create_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='發票與稅務狀態歷程';
+
+CREATE TABLE IF NOT EXISTS tax_event (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '發票稅務事件序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    entity_type             VARCHAR(30)                         NOT NULL COMMENT 'TRACK;SALES_INVOICE;PURCHASE_INVOICE;VOID;ALLOWANCE;FILING',
+    entity_sid              VARCHAR(32)                         NOT NULL COMMENT '實體序號',
+    event_code              VARCHAR(120)                        NOT NULL COMMENT '事件代碼',
+    event_version           INT                                 NOT NULL DEFAULT 1 COMMENT '事件版本',
+    event_data              JSON                                    NULL COMMENT '事件內容',
+    source_event_id         VARCHAR(100)                            NULL COMMENT '來源事件ID',
+    correlation_id          VARCHAR(100)                            NULL COMMENT '關聯識別碼',
+    causation_id            VARCHAR(100)                            NULL COMMENT '因果事件ID',
+    outbox_event_sid        VARCHAR(32)                             NULL COMMENT 'IntegrationDB Outbox事件序號',
+    process_status          VARCHAR(20)                         NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING待處理;SUCCESS成功;FAILED失敗;IGNORED忽略',
+    processed_date          DATETIME                                NULL COMMENT '處理時間',
+    error_message           TEXT                                    NULL COMMENT '錯誤訊息',
+    UNIQUE KEY uk_te_source_event_id (source_event_id),
+    INDEX idx_te_entity (entity_type, entity_sid),
+    INDEX idx_te_event_code (event_code),
+    INDEX idx_te_correlation_id (correlation_id),
+    INDEX idx_te_outbox_event_sid (outbox_event_sid),
+    INDEX idx_te_status (process_status),
+    INDEX idx_te_create_date (create_date),
+    CHECK (event_version > 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='發票與稅務領域事件';
+
+SET FOREIGN_KEY_CHECKS = 1;
+";
+    }
+}

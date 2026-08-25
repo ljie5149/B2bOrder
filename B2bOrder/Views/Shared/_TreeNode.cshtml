@@ -1,0 +1,94 @@
+@using B2bOrder.Models.Common
+@model B2bOrder.Models.Tree.MemberTreeNode
+
+@{
+    // 是否顯示階段
+    bool fShowLayer = SysDefine.ShowLayer;
+
+    // 1. 從 ViewData 取得當前層級，如果拿不到（代表是根節點）就預設為第 1 層
+    int currentLevel = ViewData["TreeLevel"] != null ? (int)ViewData["TreeLevel"] : 1;
+    string strLevel = (fShowLayer) ? $" (第 {currentLevel} 層)" : "";
+
+    // 2. 判斷是否需要收合：當層級大於或等於 3，且底下有子節點時，預設收合
+    bool shouldCollapse = currentLevel >= 3 && Model.Children.Any();
+}
+
+<div class="node-wrapper @(shouldCollapse ? "is-collapsed" : "")">
+    <div class="member-node @(Model.Role == MemberRoles.Distributor ? "member-distributor" : "")"
+         data-sid="@Model.Sid"
+         data-mid="@Model.Mid"
+         data-name="@Model.Name">
+
+        <div class="node-toolbar">
+            <button type="button" class="btn-add-member" onclick="showCreateMemberModal('@Model.Sid', '@Model.Mid', '@Model.Role')" title="新增下線">
+                <i class="bi bi-person-plus-fill"></i>
+            </button>
+            <button type="button" class="btn-edit-member" onclick="showEditMemberModal('@Model.Sid')" title="編輯會員資料">
+                <i class="bi bi-pencil-square"></i>
+            </button>
+            <button type="button" class="btn-renew-member" onclick="renewMember('@Model.Sid', '@Model.Mid')" title="已續約">
+                <i class="bi bi-arrow-clockwise"></i>
+            </button>
+        </div>
+
+        <div class="member-avatar">
+            <i class="bi bi-person-circle @(Model.Role == MemberRoles.Distributor ? "avatar-distributor" : "")"></i>
+        </div>
+        <div class="member-name">
+            @Model.Name
+            <button type="button"
+                    class="btn-view-member"
+                    onclick="viewMember('@Model.Sid')"
+                    title="檢視會員"
+                    style="background: none; border: none; padding: 0; margin-left: 6px; color: #6c757d; cursor: pointer; vertical-align: middle;">
+                <i class="bi bi-eye-fill"></i>
+            </button>
+        </div> <div class="member-mid">@Model.Mid</div>
+        <div class="member-role">
+            <span class="badge @MemberRoles.GetBadgeClass(Model.Role)">@MemberRoles.GetName(Model.Role)</span>@strLevel
+        </div>
+        <div class="member-team">團隊人數 @Model.TeamCount 人</div>
+
+        @if (!Model.IsRoot)
+        {
+            <div class="delete-area">
+                <button type="button" class="btn-delete-member" onclick="showDeleteDialog('@Model.Sid', '@Model.Mid')" title="刪除會員">
+                    <i class="bi bi-trash-fill"></i>
+                </button>
+            </div>
+        }
+
+        @if (Model.Children.Any())
+        {
+            <div class="collapse-wrapper">
+                <button type="button"
+                        class="btn-collapse"
+                        onmousedown="toggleNode(this); event.stopPropagation();"
+                        title="展開/收合">
+                    @(shouldCollapse ? "＋" : "－")
+                </button>
+            </div>
+        }
+    </div>
+
+    @if (Model.Children.Any())
+    {
+        <div class="tree-line-vertical"></div>
+        <div class="children-container">
+            <div class="children">
+                @foreach (var child in Model.Children)
+                {
+                    <div class="child-node">
+                        <div class="tree-line-child"></div>
+
+                        @{
+                            var nextViewData = new ViewDataDictionary(ViewData);
+                            nextViewData["TreeLevel"] = currentLevel + 1;
+                        }
+                        @await Html.PartialAsync("_TreeNode", child, nextViewData)
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>

@@ -1,0 +1,11 @@
+diff a/B2bOrder/Program.cs b/B2bOrder/Program.cs	(rejected hunks)
+@@ -129,9 +129,6 @@
+     try
+     {
+         var db = services.GetRequiredService<ApplicationDbContext>();
+-
+-        if (db.Database.CanConnect()) dbHealth.IsDatabaseAvailable = true;
+-        if (!fAutoCreateDataBase)
+         try
+         {
+             // �H����T�覡�}�ҩ��h�s�u�H�����u��ҥ~�Ӹ`

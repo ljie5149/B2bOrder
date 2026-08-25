@@ -1,0 +1,77 @@
+﻿@model ExpireNoticePageViewModel
+
+<div class="card shadow-sm border-0">
+
+    <div class="table-responsive">
+
+        <table class="table table-hover">
+
+            <thead>
+
+                <tr>
+
+                    <th>時間</th>
+                    <th>MID</th>
+                    <th>通知類型</th>
+                    <th>發送方式</th>
+                    <th>標題</th>
+                    <th>結果</th>
+
+                </tr>
+
+            </thead>
+
+            <tbody>
+
+                @foreach (var item in Model.Logs)
+                {
+                    <tr>
+
+                        <td>
+                            @item.SendDate.ToString(
+                            "yyyy-MM-dd HH:mm")
+                    </td>
+
+                    <td>
+                        @item.MemberMid
+                    </td>
+
+                    <td>
+                        @item.NotifyType
+                    </td>
+
+                    <td>
+                        @item.PushType
+                    </td>
+
+                    <td>
+                        @item.Title
+                    </td>
+
+                    <td>
+
+                        @if (item.Result == "SUCCESS")
+                            {
+                                <span class="badge bg-success">
+                                    成功
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-danger">
+                                    失敗
+                                </span>
+                            }
+
+                        </td>
+
+                    </tr>
+                }
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+</div>

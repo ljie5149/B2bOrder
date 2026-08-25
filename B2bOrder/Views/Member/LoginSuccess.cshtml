@@ -1,0 +1,62 @@
+@model B2bOrder.Models.RegisterViewModel
+
+@{
+    ViewData["Title"] = "登入成功";
+}
+
+<div class="register-wrapper">
+    <div class="register-container" style="max-width: 640px;">
+
+        <partial name="_Brand" />
+
+        <div class="card register-card border-0 shadow p-4 p-sm-5 text-center mt-4">
+            <div class="card-body">
+
+                <div class="success-icon-wrapper mb-4 d-inline-flex align-items-center justify-content-center position-relative">
+
+                    <div class="bg-success bg-opacity-10 rounded-circle d-flex align-items-center justify-content-center" style="width: 100px; height: 100px;">
+                        <div class="bg-success text-white rounded-circle d-flex align-items-center justify-content-center shadow-sm" style="width: 76px; height: 76px;">
+                            <i class="bi bi-check-lg" style="font-size: 2.5rem; -webkit-text-stroke: 1px;"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <h2 class="fw-bold text-dark mb-2" style="letter-spacing: 1px;">@ViewData["Title"]！</h2>
+                <p class="text-muted mb-4">歡迎回來，您已成功登入系統。</p>
+
+                <div class="user-info-box d-flex align-items-center gap-3 p-3 rounded mb-4 text-start" style="background-color: #f0f5ff; border: 1px solid #e1ecff;">
+                    <div class="user-avatar-badge bg-white shadow-sm rounded-circle d-flex align-items-center justify-content-center text-primary" style="width: 48px; height: 48px; min-width: 48px;">
+                        <i class="bi bi-person fs-4"></i>
+                    </div>
+                    <div class="overflow-hidden">
+                        <div class="text-muted small mb-0.5">您好，</div>
+                        <div class="fw-semibold text-dark text-truncate">@(Model?.Email ?? "demo.user@example.com")</div>
+                    </div>
+                </div>
+
+                <div class="d-flex flex-column gap-3 max-width-actions mx-auto" style="max-width: 400px;">
+                    <a asp-controller="Member" asp-action="Center" class="btn btn-primary w-100 py-2.5 fw-semibold d-flex align-items-center justify-content-center gap-2 shadow-sm" style="background-color: #1e60eb; border-color: #1e60eb;">
+                        <i class="bi bi-grid-1x2-fill"></i> 前往會員中心
+                    </a>
+
+                    <a asp-controller="Home" asp-action="Index" class="btn btn-link text-decoration-none text-primary fw-medium small d-inline-flex align-items-center justify-content-center gap-1.5 py-2">
+                        <i class="bi bi-house-door"></i> 返回首頁
+                    </a>
+                </div>
+
+            </div>
+        </div>
+
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            // 修正 Url.Action 的參數順序：action, controller
+            setTimeout(function() {
+                window.location.href = '@Url.Action("Index", "Home")';
+            }, 5000);
+        })();
+    </script>
+}

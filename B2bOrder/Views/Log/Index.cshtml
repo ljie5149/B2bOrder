@@ -1,0 +1,439 @@
+﻿@using B2bOrder.Models.Common
+@model IEnumerable<B2bOrder.Models.Db.LogAction>
+
+@{
+    ViewData["Title"] = "操作紀錄";
+}
+
+<div class="container-fluid px-0 py-1">
+    <div class="mb-4">
+        <!-- 標題 -->
+        <div class="mb-4">
+
+            <h1 class="fw-bold mb-2">
+                @ViewData["Title"]
+            </h1>
+
+            <div class="text-muted">
+                查看系統所有操作行為記錄
+            </div>
+
+        </div>
+    </div>
+
+    <div class="row g-2 mb-3 align-items-center bg-white p-3 rounded shadow-sm mx-0">
+        <div class="col-xl-3 col-md-4 d-flex align-items-center">
+            <input type="date" id="startDate" class="form-control form-control-sm" value="@DateTime.Now.AddDays(-7).ToString("yyyy-MM-dd")">
+            <span class="mx-2 text-muted">-</span>
+            <input type="date" id="endDate" class="form-control form-control-sm" value="@DateTime.Now.ToString("yyyy-MM-dd")">
+        </div>
+        <div class="col-md-2 col-sm-4">
+            <select id="selPageName" class="form-select form-select-sm">
+                <option value="">全部模組</option>
+                @foreach (var name in ModuleNames.ListAll)
+                {
+                    <option value="@name">@name</option>
+                }
+            </select>
+        </div>
+
+        <div class="col-md-2 col-sm-4">
+            <select id="selActionType" class="form-select form-select-sm">
+                <option value="">全部操作</option>
+                @foreach (var action in ActionNames.List)
+                {
+                    <option value="@action">@action</option>
+                }
+            </select>
+        </div>
+        <div class="col-md-2 col-sm-4">
+            <select id="selUserAccount" class="form-select form-select-sm">
+                <option value="">全部使用者</option>
+                @* 優化：動態讀取後端控制器抓出來的不重複使用者帳號 *@
+                @if (ViewBag.UserAccounts != null)
+                {
+                    foreach (var account in (List<string>)ViewBag.UserAccounts)
+                    {
+                        <option value="@account">@account</option>
+                    }
+                }
+            </select>
+        </div>
+        <div class="col-xl-2 col-md-3">
+            <div class="input-group input-group-sm">
+                <input type="text" id="txtKeyword" class="form-control" placeholder="搜尋關鍵字">
+                <button class="btn btn-outline-secondary bg-light text-muted border-start-0" type="button" id="btnSearch">
+                    <i class="bi bi-search"></i>
+                </button>
+            </div>
+        </div>
+        <div class="col-auto ms-auto">
+            <button class="btn btn-outline-primary btn-sm px-3" id="btnExport">
+                <i class="bi bi-upload me-1"></i>匯出紀錄
+            </button>
+        </div>
+    </div>
+
+    <div class="bg-white rounded shadow-sm p-3 mb-4">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0" id="logTable" style="font-size: 0.9rem;">
+                <thead class="table-light text-secondary">
+                    <tr>
+                        <th width="80">編號</th> @* <-- 1. 第二欄加入編號標頭 *@
+                        <th width="180">時間</th>
+                        <th width="180">使用者</th>
+                        <th width="120">模組</th>
+                        <th width="180">操作</th>
+                        <th width="120">目標對象</th>
+                        <th width="140">IP 位址</th>
+                        <th width="90">結果</th>
+                        <th width="90" class="text-center">詳細資訊</th>
+                    </tr>
+                </thead>
+                <tbody>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center mt-3">
+            <div class="text-muted small" id="pageInfo">顯示第 0 到 0 筆，共 0 筆紀錄</div>
+            <nav>
+                <ul class="pagination pagination-sm mb-0" id="pagination">
+                </ul>
+            </nav>
+        </div>
+    </div>
+
+    <div class="card shadow-sm border-0 d-none mb-3" id="detailPanel" style="font-size: 0.9rem;">
+        <div class="card-header bg-light fw-bold text-dark py-3 border-0">
+            操作詳細資訊
+        </div>
+        <div class="card-body p-4">
+            <div class="row g-3">
+                <div class="col-md-4 col-sm-6">
+                    <span class="text-secondary d-inline-block" style="width: 80px;">時間</span>
+                    <span class="text-dark fw-medium" id="detDate">-</span>
+                </div>
+                <div class="col-md-4 col-sm-6">
+                    <span class="text-secondary d-inline-block" style="width: 80px;">模組</span>
+                    <span id="detModule">-</span>
+                </div>
+                <div class="col-md-4 col-sm-6">
+                    <span class="text-secondary d-inline-block" style="width: 80px;">使用者</span>
+                    <span class="text-dark fw-medium" id="detUser">-</span>
+                </div>
+                <div class="col-md-4 col-sm-6">
+                    <span class="text-secondary d-inline-block" style="width: 80px;">IP 位址</span>
+                    <span class="text-dark" id="detIp">-</span>
+                </div>
+                <div class="col-md-4 col-sm-6">
+                    <span class="text-secondary d-inline-block" style="width: 80px;">操作</span>
+                    <span class="text-dark fw-medium" id="detAction">-</span>
+                </div>
+                <div class="col-md-4 col-sm-6">
+                    <span class="text-secondary d-inline-block" style="width: 80px;">目標對象</span>
+                    <span class="text-dark" id="detTarget">-</span>
+                </div>
+                <div class="col-md-4 col-sm-6">
+                    <span class="text-secondary d-inline-block" style="width: 80px;">結果</span>
+                    <span id="detResult">-</span>
+                </div>
+                <div class="col-md-8">
+                    <span class="text-secondary d-inline-block" style="width: 80px;">操作描述</span>
+                    <span class="text-dark" id="detDesc">-</span>
+                </div>
+                <div class="col-12 border-top pt-2 mt-2">
+                    <span class="text-secondary d-inline-block" style="width: 80px;">使用者代理</span>
+                    <span class="text-muted small" id="detAgent" style="word-break: break-all;">-</span>
+                </div>
+                <div class="col-12">
+                    <span class="text-secondary d-inline-block" style="width: 80px;">更多資訊</span>
+                    <span class="text-dark" id="detMore">-</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        let currentPage = 1;
+        const pageSize = @SysDefine.ShowRecordsPerPage;
+
+        $(document).ready(function() {
+            loadLogs();
+
+            // 防抖動功能 (Debounce)
+            function debounce(func, delay) {
+                let timer;
+                return function (...args) {
+                    clearTimeout(timer);
+                    timer = setTimeout(() => func.apply(this, args), delay);
+                };
+            }
+
+            // 綁定篩選控制項事件
+            $('#btnSearch').on('click', function() {
+                currentPage = 1;
+                loadLogs();
+            });
+
+            // 關鍵字優化：支援 Enter 鍵立即搜尋 + 停止打字 500ms 自動搜尋
+            $('#txtKeyword').on('keypress', function(e) {
+                if(e.which === 13) {
+                    currentPage = 1;
+                    loadLogs();
+                }
+            }).on('input', debounce(function() {
+                currentPage = 1;
+                loadLogs();
+            }, 500));
+
+            // 下拉選單與日期變更立即搜尋
+            $('#selPageName, #selActionType, #selUserAccount, #startDate, #endDate').on('change', function() {
+                currentPage = 1;
+                loadLogs();
+            });
+        });
+
+        // 綁定匯出紀錄按鈕點擊事件
+        $('#btnExport').on('click', function (e) {
+            e.preventDefault();
+
+            // 封裝當前畫面上所有的篩選參數
+            const params = $.param({
+                type: 'excel', // 可依需求調整為 'csv' 或由畫面的下拉選單決定
+                startDate: $('#startDate').val(),
+                endDate: $('#endDate').val(),
+                pageName: $('#selPageName').val(),
+                actionType: $('#selActionType').val(),
+                userAccount: $('#selUserAccount').val(),
+                keyword: $('#txtKeyword').val()
+            });
+
+            // 觸發瀏覽器視窗導向，直接下載檔案
+            window.location.href = `/Log/Export?${params}`;
+        });
+
+        function loadLogs() {
+            const params = {
+                startDate: $('#startDate').val(),
+                endDate: $('#endDate').val(),
+                pageName: $('#selPageName').val(),
+                actionType: $('#selActionType').val(),
+                userAccount: $('#selUserAccount').val(),
+                keyword: $('#txtKeyword').val(),
+                page: currentPage,
+                pageSize: pageSize
+            };
+
+            $.getJSON('/Log/GetLogs', params, function(res) {
+                // 檢查大寫的 Success
+                if (!res.Success) {
+                    alert(res.Message || "讀取紀錄失敗");
+                    return;
+                }
+
+                let html = '';
+                // 讀取大寫的 Rows
+                if(res.Rows && res.Rows.length > 0) {
+                    res.Rows.forEach((row, index) => {
+                        // 2. 計算流水號起算值：(目前頁碼 - 1) * 每頁筆數
+                        let startNumber = (currentPage - 1) * pageSize;
+
+                        let targetDisplay = row.TargetMid ? row.TargetMid : '-';
+                        let firstLetter = 'A';
+                        let avatarClass = row.UserAccount === 'System' ? 'bg-secondary' : 'bg-dark';
+
+                        let resultStatus = row.Result || '成功';
+                        let resultHtml = '';
+
+                        const badgeStyle = 'font-size: 0.95rem; font-weight: 600; border: 2px solid; padding: 0.25rem 0.6rem; background-color: #ffffff;';
+
+                        if (resultStatus === '成功') {
+                            resultHtml = `<span class="badge rounded-pill" style="${badgeStyle} color: #198754; border-color: #198754;">成功</span>`;
+                        } else {
+                            resultHtml = `<span class="badge rounded-pill" style="${badgeStyle} color: #dc3545; border-color: #dc3545;">${resultStatus}</span>`;
+                        }
+
+                        // 當前該筆的自動遞增流水號
+                        let currentNo = startNumber + (index + 1);
+
+                        // 修正：所有 row.欄位 皆改為大寫開頭 PascalCase 確保對齊後端
+                        html += `
+                            <tr>
+                                <td class="text-muted fw-bold">${currentNo}</td>
+                                <td class="text-dark">${formatDate(row.CreateDate)}</td>
+                                <td>
+                                    <span class="badge ${avatarClass} rounded-circle d-inline-flex align-items-center justify-content-center me-1" style="width:20px; height:20px; font-size:10px; padding:0;">${firstLetter}</span>
+                                    <span class="fw-medium">${row.UserAccount || 'Unknown'}</span>
+                                </td>
+                                <td>${getModuleBadge(row.ModuleName)}</td>
+                                <td class="text-dark">${row.ActionName || '-'}</td>
+                                <td>
+                                    <span class="badge bg-primary rounded-circle d-inline-flex align-items-center justify-content-center me-1" style="width:20px; height:20px; font-size:10px; padding:0;">U</span>
+                                    <span class="text-secondary">${targetDisplay}</span>
+                                </td>
+                                <td class="text-muted">${row.Ip || '127.0.0.1'}</td>
+                                <td>${resultHtml}</td>
+                                <td class="text-center">
+                                    <button class="btn btn-link btn-sm p-0 m-0 border-0 align-baseline" onclick='viewDetail(${JSON.stringify(row).replace(/'/g, "&apos;")})'>
+                                        <i class="bi bi-eye-fill text-secondary fs-5"></i>
+                                    </button>
+                                </td>
+                            </tr>`;
+                    });
+                } else {
+                    html = '<tr><td colspan="8" class="text-center text-muted py-4">查無符合條件的操作紀錄</td></tr>';
+                }
+
+                $('#logTable tbody').html(html);
+
+                // 傳入大寫的 Total
+                updatePagination(res.Total);
+            });
+        }
+
+        function viewDetail(row) {
+            $('#detailPanel').removeClass('d-none');
+            $('#detDate').text(formatDate(row.CreateDate));
+            $('#detModule').html(getModuleBadge(row.ModuleName)); // 修正大小寫與對齊
+            $('#detUser').text(row.UserAccount || '-');
+            $('#detAction').text(row.ActionName || '-');
+            $('#detIp').text(row.Ip || '127.0.0.1');
+
+            let targetText = row.TargetMid || '無';
+            $('#detTarget').text(targetText);
+
+            let detResultStatus = row.Result || '成功';
+            const detBadgeStyle = 'font-size: 1.25rem; font-weight: 600; border: 2px solid; padding: 0.25rem 0.6rem; background-color: #ffffff;';
+
+            if (detResultStatus === '成功') {
+                $('#detResult').html(`<span class="badge rounded-pill" style="${detBadgeStyle} color: #198754; border-color: #198754;">成功</span>`);
+            } else {
+                $('#detResult').html(`<span class="badge rounded-pill" style="${detBadgeStyle} color: #dc3545; border-color: #dc3545;">${detResultStatus}</span>`);
+            }
+
+            // --- 優化描述與詳細資訊的顯示 ---
+            $('#detDesc').text(row.Description || `${row.ActionName || ''} ${targetText}`);
+            $('#detAgent').text(row.UserAgent || '無瀏覽器資訊');
+
+            // 嘗試解析 MoreDescription 是否為 JSON 物件，若是則進行美化排版
+            let moreDesc = row.MoreDescription || `從 ${row.ModuleName || '各功能管理端'} 觸發`;
+            try {
+                // 檢查是否為 JSON 格式字串
+                if (moreDesc && (moreDesc.trim().startsWith('{') || moreDesc.trim().startsWith('['))) {
+                    let jsonObj = JSON.parse(moreDesc);
+                    // 轉成帶有縮排的格式並放入 pre 標籤
+                    moreDesc = `<pre class="bg-light p-2 rounded text-start mb-0" style="font-family: monospace; max-height:200px; overflow-y:auto;">${JSON.stringify(jsonObj, null, 2)}</pre>`;
+                    $('#detMore').html(moreDesc);
+                } else {
+                    $('#detMore').text(moreDesc);
+                }
+            } catch (e) {
+                $('#detMore').text(moreDesc);
+            }
+
+            $('html, body').animate({ scrollTop: $("#detailPanel").offset().top - 20 }, 250);
+        }
+
+        // ==========================================
+        // 補全輔助功能 1：動態日期格式化 (YYYY-MM-DD HH:mm:ss)
+        // ==========================================
+        function formatDate(dateStr) {
+            if (!dateStr) return '-';
+            const d = new Date(dateStr);
+            if (isNaN(d.getTime())) return dateStr;
+
+            const pad = (n) => n < 10 ? '0' + n : n;
+            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+        }
+
+        // ==========================================
+        // 補全輔助功能 2：將不同模組名稱包裝成專屬顏色的 Badge
+        // ==========================================
+        // 1. 從 C# 注入模組名稱常數到 JS 物件
+        const ModuleNames = {
+            MemberManager: '@Html.Raw(ModuleNames.MemberManager)',
+            ExpireNotice: '@Html.Raw(ModuleNames.ExpireNotice)',
+            NoticeSetting: '@Html.Raw(ModuleNames.NoticeSetting)',
+            IntegrationSetting: '@Html.Raw(ModuleNames.IntegrationSetting)',
+            ImportExport: '@Html.Raw(ModuleNames.ImportExport)',
+            SecuritySetting: '@Html.Raw(ModuleNames.SecuritySetting)',
+            SystemMaintenance: '@Html.Raw(ModuleNames.SystemMaintenance)',
+            SystemSetting: '@Html.Raw(ModuleNames.SystemSetting)'
+        };
+        function getModuleBadge(module_name) {
+            if (!module_name) module_name = '一般';
+
+            const baseStyle = 'font-size: 0.95rem; font-weight: 700; border: 2px solid; padding: 0.25rem 0.65rem;';
+
+            // 2. 使用從 C# 帶過來的變數作為 Key 來定義樣式
+            const moduleStyles = {
+                [ModuleNames.MemberManager]: { text: ModuleNames.MemberManager, color: '#2b57f1', border: '#b1c2ff', bg: '#edf2ff' },
+                [ModuleNames.ExpireNotice]: { text: ModuleNames.ExpireNotice, color: '#b78103', border: '#ffe082', bg: '#fffde7' },
+                [ModuleNames.NoticeSetting]: { text: ModuleNames.NoticeSetting, color: '#7047eb', border: '#d1c4e9', bg: '#f3e5f5' },
+                [ModuleNames.IntegrationSetting]: { text: ModuleNames.IntegrationSetting, color: '#f57c00', border: '#ffe0b2', bg: '#fff3e0' },
+                [ModuleNames.ImportExport]: { text: ModuleNames.ImportExport, color: '#0097a7', border: '#b2ebf2', bg: '#e0f7fa' },
+                [ModuleNames.SecuritySetting]: { text: ModuleNames.SecuritySetting, color: '#f44336', border: '#ffcdd2', bg: '#ffebee' },
+                [ModuleNames.SystemMaintenance]: { text: ModuleNames.SystemMaintenance, color: '#5c6bc0', border: '#c5cae9', bg: '#e8eaf6' },
+                [ModuleNames.SystemSetting]: { text: ModuleNames.SystemMaintenance, color: '#5c6bc0', border: '#c5cae9', bg: '#e8eaf6' } // 顯示為系統維護
+            };
+
+            const style = moduleStyles[module_name] || {
+                text: module_name,
+                color: '#616161',
+                border: '#e0e0e0',
+                bg: '#f5f5f5'
+            };
+
+            return `<span class="badge rounded-pill" style="${baseStyle} color: ${style.color}; border-color: ${style.border}; background-color: ${style.bg};">${style.text}</span>`;
+        }
+
+        // ==========================================
+        // 補全輔助功能 3：動態計算分頁與渲染分頁按鈕
+        // ==========================================
+        function updatePagination(totalRecords) {
+            const totalPages = Math.ceil(totalRecords / pageSize);
+
+            // 1. 更新資料筆數說明文字
+            if (totalRecords === 0) {
+                $('#pageInfo').text('顯示第 0 到 0 筆，共 0 筆紀錄');
+                $('#pagination').empty();
+                return;
+            }
+            const startRecord = (currentPage - 1) * pageSize + 1;
+            const endRecord = Math.min(currentPage * pageSize, totalRecords);
+            $('#pageInfo').text(`顯示第 ${startRecord} 到 ${endRecord} 筆，共 ${totalRecords} 筆紀錄`);
+
+            // 2. 建立分頁 HTML 按鈕
+            let pgHtml = '';
+
+            // 上一頁
+            pgHtml += `<li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
+                        <a class="page-link" href="javascript:void(0)" onclick="changePage(${currentPage - 1})"><i class="bi bi-chevron-left"></i></a>
+                       </li>`;
+
+            // 頁碼頁
+            for (let i = 1; i <= totalPages; i++) {
+                pgHtml += `<li class="page-item ${currentPage === i ? 'active' : ''}">
+                            <a class="page-link" href="javascript:void(0)" onclick="changePage(${i})">${i}</a>
+                           </li>`;
+            }
+
+            // 下一頁
+            pgHtml += `<li class="page-item ${currentPage === totalPages || totalPages === 0 ? 'disabled' : ''}">
+                        <a class="page-link" href="javascript:void(0)" onclick="changePage(${currentPage + 1})"><i class="bi bi-chevron-right"></i></a>
+                       </li>`;
+
+            $('#pagination').html(pgHtml);
+        }
+
+        // 分頁點擊事件
+        function changePage(page) {
+            if (page < 1) return;
+            currentPage = page;
+            loadLogs();
+        }
+    </script>
+}

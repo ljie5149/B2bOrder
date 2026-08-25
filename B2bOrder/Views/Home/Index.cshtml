@@ -1,0 +1,401 @@
+﻿@model B2bOrder.Models.HomeDashboardViewModel
+
+@{
+    ViewData["Title"] = "首頁儀表板";
+    var showSalesAndBonus = Model?.ShowSalesAndBonus ?? false;
+
+    // 上方三個卡片寬度（若 showSalesAndBonus 為 false，三等分；為 true 時保留原本的 20% 寬度）
+    var topColClass = showSalesAndBonus ? "col-md-2" : "col-md-4";
+    var topColStyle = showSalesAndBonus ? "width: 20%;" : "";
+}
+
+<link rel="stylesheet" href="~/css/all.min.css" />
+<link rel="stylesheet" href="~/css/dashboard.css" />
+
+<div class="container-fluid p-4 bg-light text-dark text-start" style="min-height: 100vh; font-family: 'Microsoft JhengHei', sans-serif;">
+
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="fw-bold mb-1">您好，@Model.MemberName 👋</h2>
+            <p class="text-muted mb-0">歡迎回來！以下是您團隊的最新概況。</p>
+        </div>
+        <div style="display: none;">
+            <div class="d-flex gap-2">
+                <div class="input-group">
+                    <span class="input-group-text bg-white border-end-0"><i class="fa-regular fa-calendar text-muted"></i></span>
+                    <select class="form-select border-start-0 ps-0 text-muted fw-medium" style="width: 240px;">
+                        <option selected>2024-05-01 ~ 2024-05-31</option>
+                    </select>
+                </div>
+                <button class="btn btn-primary d-flex align-items-center gap-2 px-3">
+                    <i class="fa-solid fa-download"></i> 匯出報表
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4 mb-4">
+        <div class="col-12">
+            <div class="card border-0 shadow-sm p-4 h-100">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="fw-bold mb-0">📢 系統公告</h5>
+                    <a asp-controller="Notice" asp-action="Index" class="text-decoration-none small fw-medium">查看更多公告</a>
+                </div>
+
+                <div class="d-flex flex-column gap-2">
+                    @if (Model.LatestNotices != null && Model.LatestNotices.Any())
+                    {
+                        foreach (var notice in Model.LatestNotices)
+                        {
+                            // 序列化成 JSON 供下方的詳細面板使用
+                            var noticeJson = Newtonsoft.Json.JsonConvert.SerializeObject(notice);
+
+                            <div class="p-3 rounded d-flex align-items-center justify-content-between row g-2 m-0 shadow-2xs" style="background-color: #f4f7fe; font-size: 14px;">
+                                <div class="col-md-10 d-flex align-items-start gap-3">
+                                    <i class="fa-solid fa-bullhorn text-primary mt-1"></i>
+                                    <div class="text-truncate">
+                                        <span class="text-muted me-2 fw-medium">@notice.PublishDate.ToString("yyyy/MM/dd")</span>
+                                        @* <span class="badge bg-secondary me-2">@notice.Category</span> *@
+                                        <span class="fw-bold text-dark me-2">@notice.Title</span>
+                                        <span class="text-muted small">
+                                            @System.Text.RegularExpressions.Regex.Replace(notice.Content ?? "", "<.*?>", string.Empty)
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="col-md-2 text-end">
+                                    <button type="button" class="btn btn-sm btn-outline-primary py-1 px-3"
+                                            onclick='viewNoticeDetailFromDashboard(@Html.Raw(noticeJson.Replace("'", "&apos;")))'>
+                                        <i class="fa-solid fa-eye"></i> 檢視
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="p-4 text-center text-muted bg-white rounded border border-dashed">
+                            <i class="fa-solid fa-folder-open mb-2 fs-4"></i> 目前暫無任何系統公告
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-12">
+            <div class="card border-0 shadow-sm p-4">
+
+                <!-- 區塊標題與查看更多 -->
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="fw-bold mb-0">⏰ 會員續約提醒</h5>
+                    <a asp-controller="Member" asp-action="ExpireNotice" class="text-decoration-none small fw-medium">
+                        查看更多 <i class="fa-solid fa-chevron-right"></i>
+                    </a>
+                </div>
+
+                <!-- 卡片並排區塊 -->
+                <div class="row g-3">
+                    <!-- 即將到期會員卡片 (黃橘色警示) -->
+                    <div class="col-md-6">
+                        <div class="card border-0 bg-light p-3 border-start border-warning border-4 h-100">
+                            <div class="d-flex align-items-center gap-3">
+                                <div class="rounded-circle bg-warning bg-opacity-10 text-warning d-flex align-items-center justify-content-center" style="width: 50px; height: 50px; flex-shrink: 0;">
+                                    <i class="fa-solid fa-clock-rotate-left fa-lg"></i>
+                                </div>
+                                <div>
+                                    <small class="text-muted d-block fw-medium">即將到期會員</small>
+                                    <h3 class="fw-bold my-1 text-warning">@Model.ExpireSoonCount <span class="fs-6 fw-normal text-muted">人</span></h3>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 已逾期會員卡片 (紅色警告) -->
+                    <div class="col-md-6">
+                        <div class="card border-0 bg-light p-3 border-start border-danger border-4 h-100">
+                            <div class="d-flex align-items-center gap-3">
+                                <div class="rounded-circle bg-danger bg-opacity-10 text-danger d-flex align-items-center justify-content-center" style="width: 50px; height: 50px; flex-shrink: 0;">
+                                    <i class="fa-solid fa-triangle-exclamation fa-lg"></i>
+                                </div>
+                                <div>
+                                    <small class="text-muted d-block fw-medium">已逾期會員</small>
+                                    <h3 class="fw-bold my-1 text-danger">@Model.ExpiredCount <span class="fs-6 fw-normal text-muted">人</span></h3>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="@topColClass" style="@topColStyle">
+            <div class="card border-0 shadow-sm p-3 h-100">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="rounded-circle bg-primary bg-opacity-10 text-primary d-flex align-items-center justify-content-center" style="width: 50px; height: 50px;">
+                        <i class="fa-solid fa-users fa-lg"></i>
+                    </div>
+                    <div>
+                        <small class="text-muted d-block fw-medium">團隊總人數</small>
+                        <h3 class="fw-bold my-1">@Model.TotalMembers <span class="fs-6 fw-normal text-muted">人</span></h3>
+                        <small class="text-success fw-semibold"><i class="fa-solid fa-arrow-up"></i> — <span class="text-muted fw-normal">較上月</span></small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="@topColClass" style="@topColStyle">
+            <div class="card border-0 shadow-sm p-3 h-100">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="rounded-circle bg-success bg-opacity-10 text-success d-flex align-items-center justify-content-center" style="width: 50px; height: 50px;">
+                        <i class="fa-regular fa-star fa-lg"></i>
+                    </div>
+                    <div>
+                        <small class="text-muted d-block fw-medium">直銷商人數</small>
+                        <h3 class="fw-bold my-1">@Model.DirectMembers <span class="fs-6 fw-normal text-muted">人</span></h3>
+                        <small class="text-success fw-semibold"><i class="fa-solid fa-arrow-up"></i> — <span class="text-muted fw-normal">較上月</span></small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="@topColClass" style="@topColStyle">
+            <div class="card border-0 shadow-sm p-3 h-100">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="rounded-circle bg-purple bg-opacity-10 text-purple d-flex align-items-center justify-content-center" style="width: 50px; height: 50px; color: #6f42c1; background-color: rgba(111, 66, 193, 0.1);">
+                        <i class="fa-regular fa-user fa-lg"></i>
+                    </div>
+                    <div>
+                        <small class="text-muted d-block fw-medium">一般會員人數</small>
+                        <h3 class="fw-bold my-1">@Model.RegularMembers <span class="fs-6 fw-normal text-muted">人</span></h3>
+                        <small class="text-success fw-semibold"><i class="fa-solid fa-arrow-up"></i> — <span class="text-muted fw-normal">較上月</span></small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @if (showSalesAndBonus)
+        {
+            <div class="col-md-2" style="width: 20%;">
+                <div class="card border-0 shadow-sm p-3 h-100">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="rounded-circle bg-warning bg-opacity-10 text-warning d-flex align-items-center justify-content-center" style="width: 50px; height: 50px; color: #fd7e14 !important; background-color: rgba(253, 126, 20, 0.1) !important;">
+                            <i class="fa-solid fa-cart-shopping fa-lg"></i>
+                        </div>
+                        <div>
+                            <small class="text-muted d-block fw-medium">本月總業績</small>
+                            <h3 class="fw-bold my-1">$ @Model.SalesTotal</h3>
+                            <small class="text-success fw-semibold"><i class="fa-solid fa-arrow-up"></i> — <span class="text-muted fw-normal">較上月</span></small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2" style="width: 20%;">
+                <div class="card border-0 shadow-sm p-3 h-100">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="rounded-circle bg-warning bg-opacity-10 text-warning d-flex align-items-center justify-content-center" style="width: 50px; height: 50px;">
+                            <i class="fa-solid fa-dollar-sign fa-lg"></i>
+                        </div>
+                        <div>
+                            <small class="text-muted d-block fw-medium">本月總獎金</small>
+                            <h3 class="fw-bold my-1">$ @Model.BonusTotal</h3>
+                            <small class="text-success fw-semibold"><i class="fa-solid fa-arrow-up"></i> — <span class="text-muted fw-normal">較上月</span></small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+
+    <div class="row g-4 mb-4">
+        <div class="col-lg-3">
+            <div class="card border-0 shadow-sm p-4 h-100 d-flex flex-column justify-content-between">
+                <h5 class="fw-bold mb-3">組織概況</h5>
+                <div class="d-flex align-items-center justify-content-around my-2">
+                    <div class="position-relative d-flex align-items-center justify-content-center" style="width: 110px; height: 110px; border-radius: 50%; background: conic-gradient(#0d6efd 0% 55.2%, #198754 55.2% 100%);">
+                        <div class="position-absolute bg-white rounded-circle d-flex flex-column align-items-center justify-content-center shadow-sm" style="width: 85px; height: 85px;">
+                            <h3 class="fw-bold mb-0">@Model.TotalMembers</h3>
+                            <small class="text-muted" style="font-size: 11px;">總人數</small>
+                        </div>
+                    </div>
+                    <div style="font-size: 13px;">
+                        <div class="mb-1"><span class="badge bg-primary rounded-circle me-1" style="width:8px; height:8px; padding:0;"> </span> 直銷商 <span class="text-muted ms-2">@Model.DirectMembers 人 (@(Model.TotalMembers > 0 ? Math.Round((double)Model.DirectMembers / Model.TotalMembers * 100, 1) : 0)%)</span></div>
+                        <div class="mb-1"><span class="badge bg-success rounded-circle me-1" style="width:8px; height:8px; padding:0;"> </span> 一般會員 <span class="text-muted ms-2">@Model.RegularMembers 人 (@(Model.TotalMembers > 0 ? Math.Round((double)Model.RegularMembers / Model.TotalMembers * 100, 1) : 0)%)</span></div>
+                        <div><span class="badge bg-secondary rounded-circle me-1" style="width:8px; height:8px; padding:0;"> </span> 未啟用/停用 <span class="text-muted ms-2">0人 (0%)</span></div>
+                    </div>
+                </div>
+                <a asp-controller="Member" asp-action="Organization" class="btn btn-outline-primary btn-sm w-100 mt-3">
+                    查看組織圖
+                </a>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card border-0 shadow-sm p-4 h-100">
+                <h5 class="fw-bold mb-3">團隊層級分佈</h5>
+                <div class="d-flex flex-column gap-2" style="font-size: 13px;">
+                    @{
+                        double totalForCalc = Model.TotalMembers > 0 ? Model.TotalMembers : 1;
+                        double p1 = Math.Round((Model.Level1Count / totalForCalc) * 100, 1);
+                        double p2 = Math.Round((Model.Level2Count / totalForCalc) * 100, 1);
+                        double p3 = Math.Round((Model.Level3Count / totalForCalc) * 100, 1);
+                        double p4 = Math.Round((Model.Level4Count / totalForCalc) * 100, 1);
+                        double p5 = Math.Round((Model.Level5PlusCount / totalForCalc) * 100, 1);
+
+                        double maxWidth = Math.Max(p1, Math.Max(p2, Math.Max(p3, Math.Max(p4, p5))));
+                        Func<double, string> getWidth = (p) => Model.TotalMembers == 0 ? "20%" : $"{(p / (maxWidth > 0 ? maxWidth : 1) * 75 + 25)}%";
+                    }
+
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div class="text-white text-center py-1 fw-medium rounded-2" style="width: @getWidth(p1); background-color: #cbdcf7; color: #333 !important;">第 1 層</div>
+                        <span class="fw-semibold">@Model.Level1Count 人 (@p1%)</span>
+                    </div>
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div class="text-white text-center py-1 fw-medium rounded-2" style="width: @getWidth(p2); background-color: #9cbef2;">第 2 層</div>
+                        <span class="fw-semibold">@Model.Level2Count 人 (@p2%)</span>
+                    </div>
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div class="text-white text-center py-1 fw-medium rounded-2" style="width: @getWidth(p3); background-color: #6da0ed;">第 3 層</div>
+                        <span class="fw-semibold">@Model.Level3Count 人 (@p3%)</span>
+                    </div>
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div class="text-white text-center py-1 fw-medium rounded-2" style="width: @getWidth(p4); background-color: #3e81e8;">第 4 層</div>
+                        <span class="fw-semibold">@Model.Level4Count 人 (@p4%)</span>
+                    </div>
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div class="text-white text-center py-1 fw-medium rounded-2" style="width: @getWidth(p5); background-color: #0d6efd;">第 5 層(含以上)</div>
+                        <span class="fw-semibold">@Model.Level5PlusCount 人 (@p5%)</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-5">
+            <div class="card border-0 shadow-sm p-4 h-100">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="fw-bold mb-0">最新加入會員</h5>
+                    <a asp-controller="Member" asp-action="List" class="text-decoration-none small fw-medium">查看更多</a>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-borderless align-middle mb-0" style="font-size: 14px;">
+                        <tbody>
+                            @foreach (var m in Model.LatestMembers)
+                            {
+                                <tr>
+                                    <td><i class="fa-solid fa-circle-user text-success fa-lg"></i> <span class="fw-medium ms-1">@m.Name (@m.Mid)</span></td>
+                                    <td><span class="badge @(m.Role?.Contains("直") == true ? "bg-success bg-opacity-10 text-success" : "bg-primary bg-opacity-10 text-primary") px-2 py-1">@((string.IsNullOrEmpty(m.Role) ? (m.Role?.Contains("直") == true ? "直銷商" : "一般會員") : m.Role))</span></td>
+                                    <td class="text-muted">@("M" + Guid.NewGuid().ToString().Substring(0, 5).ToUpper())</td>
+                                    <td class="text-muted text-end">@m.JoinDate?.ToString("yyyy-MM-dd")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4 mb-4">
+        @if (showSalesAndBonus)
+        {
+            <div class="col-lg-7">
+                <div class="card border-0 shadow-sm p-4 h-100">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="fw-bold mb-0">業績趨勢</h5>
+                        <select class="form-select form-select-sm fw-medium text-muted" style="width: 90px;">
+                            <option>本月</option>
+                        </select>
+                    </div>
+                    <div class="bg-light rounded d-flex align-items-center justify-content-center text-muted fw-light" style="height: 280px; border: 1px dashed #dee2e6;">
+                        [ 這裡放置 折線圖 (Line Chart) ]
+                    </div>
+                </div>
+            </div>
+        }
+
+        <div class="@(showSalesAndBonus ? "col-lg-5" : "col-12")">
+            <div class="card border-0 shadow-sm p-4 h-100">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="fw-bold mb-0">會員成長趨勢</h5>
+                    <select id="trendTimeRange" class="form-select form-select-sm fw-medium text-muted" style="width: 110px;">
+                        <option value="1">近 1 個月</option>
+                        <option value="6">近 6 個月</option>
+                        <option value="12">近 1 年</option>
+                    </select>
+                </div>
+                <div style="height: 280px; position: relative;">
+                    <canvas id="memberGrowthChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm border-0 d-none mb-3" id="detailPanel" style="font-size: 0.9rem;">
+        <div class="card-header bg-light fw-bold text-dark py-3 border-0 d-flex justify-content-between align-items-center">
+            <span><i class="fa-solid fa-info-circle text-primary"></i> 系統公告詳細內容</span>
+            <button type="button" class="btn-close" onclick="$('#detailPanel').addClass('d-none');"></button>
+        </div>
+        <div class="card-body p-4">
+            <div class="row g-3">
+                <div class="col-md-4 col-sm-6">
+                    <span class="text-secondary d-inline-block" style="width: 80px;">發布日期</span>
+                    <span class="text-dark fw-medium" id="detPublishDate">-</span>
+                </div>
+                <div class="col-md-4 col-sm-6">
+                    <span class="text-secondary d-inline-block" style="width: 80px;">發布單位</span>
+                    <span class="text-dark fw-medium" id="detPublishUnit">-</span>
+                </div>
+                <div class="col-md-4 col-sm-6">
+                    <span class="text-secondary d-inline-block" style="width: 80px;">公告分類</span>
+                    <span class="text-dark fw-medium" id="detCategory">-</span>
+                </div>
+                <div class="col-md-12 border-top pt-3 mt-2">
+                    <span class="text-secondary d-block mb-1 fw-bold">公告標題</span>
+                    <div class="text-dark p-2 bg-light rounded fw-bold" id="detTitle" style="font-size: 1.05rem;">-</div>
+                </div>
+                <div class="col-md-12">
+                    <span class="text-secondary d-block mb-1 fw-bold">公告內容</span>
+                    <div class="text-dark p-3 bg-light rounded border" id="detContent" style="min-height: 120px; max-height: 400px; overflow-y: auto; white-space: pre-line; background-color: #ffffff;">-</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts
+{
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="~/js/dashboard.js"></script>
+
+    <script>
+        function viewNoticeDetailFromDashboard(row) {
+            // 顯示面板
+            $('#detailPanel').removeClass('d-none');
+
+            // 填入資料
+            $('#detPublishUnit').text(row.PublishUnit || '系統管理端');
+            $('#detCategory').text(row.Category || '一般');
+            $('#detTitle').text(row.Title || '-');
+
+            // 日期處理
+            if(row.PublishDate) {
+                let d = new Date(row.PublishDate);
+                const pad = (n) => n < 10 ? '0' + n : n;
+                $('#detPublishDate').text(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
+            } else {
+                $('#detPublishDate').text('-');
+            }
+
+            // 內容處理 (若有內含 HTML 則直接渲染)
+            if (row.Content) {
+                $('#detContent').html(row.Content);
+            } else {
+                $('#detContent').text('無詳細內容');
+            }
+
+            // 平滑滾動至詳細區塊
+            $('html, body').animate({ scrollTop: $("#detailPanel").offset().top - 20 }, 250);
+        }
+    </script>
+}

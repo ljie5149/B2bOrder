@@ -1,0 +1,20 @@
+
+/* 微調客製化顏色與效果 */
+.bg-light {
+    background-color: #f4f7fe !important;
+}
+
+.text-purple {
+    color: #6f42c1;
+}
+
+.hover-bg-light:hover {
+    background-color: #f0f2f5 !important;
+}
+
+/* 會員成長趨勢：寬度 100%、高度與寬度按比例（現用 16:9）自適應 */
+.chart-aspect {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    min-height: 180px; /* 防止過小 */
+}

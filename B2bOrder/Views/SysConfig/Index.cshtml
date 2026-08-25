@@ -1,0 +1,570 @@
+﻿@model B2bOrder.Models.NoticeViewModel
+@{
+    ViewData["Title"] = "系統設定";
+    string activeTab = ViewBag.ActiveTab ?? "basic";
+}
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+<style>
+    .fs-7 {
+        font-size: 0.85rem !important;
+    }
+
+    .nav-pills .nav-link {
+        color: #495057;
+        border: 1px solid #dee2e6;
+        margin-right: 5px;
+        background-color: #fff;
+    }
+
+        .nav-pills .nav-link.active {
+            background-color: #0d6efd;
+            color: #fff;
+            border-color: #0d6efd;
+        }
+
+    .card {
+        border-radius: 8px;
+    }
+
+    .form-switch .form-check-input {
+        width: 2.5em;
+        height: 1.25em;
+    }
+</style>
+
+<div class="container-fluid py-3 bg-light" style="min-height: 100vh;">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-1 fs-7">
+                    <li class="breadcrumb-item"><a href="#" class="text-decoration-none">系統設定</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">系統設定</li>
+                </ol>
+            </nav>
+            <h4 class="fw-bold m-0">系統設定</h4>
+            <div class="text-muted small">管理系統基本參數、功能設定與整合設定</div>
+        </div>
+        <div>
+            <button type="button" onclick="document.getElementById('mainSettingsForm').submit();" class="btn btn-primary px-3 shadow-sm btn-sm">
+                <i class="bi bi-save me-1"></i> 儲存設定
+            </button>
+        </div>
+    </div>
+
+    <ul class="nav nav-pills p-2 bg-white rounded shadow-sm mb-3" id="settingsTab" role="tablist">
+        <li class="nav-item">
+            <button class="nav-link @(activeTab == "basic" ? "active" : "")" id="basic-tab" data-bs-toggle="tab" data-bs-target="#tab-basic" type="button" role="tab"><i class="bi bi-gear me-1"></i>基本設定</button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link @(activeTab == "module" ? "active" : "")" id="module-tab" data-bs-toggle="tab" data-bs-target="#tab-module" type="button" role="tab"><i class="bi bi-grid me-1"></i>功能設定</button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link @(activeTab == "notice" ? "active" : "")" id="notice-tab" data-bs-toggle="tab" data-bs-target="#tab-notice" type="button" role="tab"><i class="bi bi-bell me-1"></i>通知設定</button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link @(activeTab == "integration" ? "active" : "")" id="integration-tab" data-bs-toggle="tab" data-bs-target="#tab-integration" type="button" role="tab"><i class="bi bi-share me-1"></i>整合設定</button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link @(activeTab == "security" ? "active" : "")" id="security-tab" data-bs-toggle="tab" data-bs-target="#tab-security" type="button" role="tab"><i class="bi bi-shield-check me-1"></i>安全設定</button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link @(activeTab == "maintain" ? "active" : "")" id="maintain-tab" data-bs-toggle="tab" data-bs-target="#tab-maintain" type="button" role="tab"><i class="bi bi-tools me-1"></i>系統維護</button>
+        </li>
+    </ul>
+
+    @if (TempData["SuccessMessage"] != null)
+    {
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            <i class="bi bi-check-circle-fill me-2"></i> @TempData["SuccessMessage"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    }
+    @if (TempData["ErrorMessage"] != null)
+    {
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i> @TempData["ErrorMessage"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    }
+
+    <form id="mainSettingsForm" asp-action="SaveBasicSettings" method="post">
+        @Html.AntiForgeryToken()
+        <div class="row g-3">
+            <div class="col-lg-9">
+                <div class="tab-content" id="settingsTabContent">
+
+                    <div class="tab-pane fade @(activeTab == "basic" ? "show active" : "")" id="tab-basic" role="tabpanel">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <div class="card border-0 shadow-sm h-100">
+                                    <div class="card-header bg-white border-0 pt-3 fw-bold"><i class="bi bi-info-circle text-primary me-2"></i>系統基本資訊</div>
+                                    <div class="card-body fs-7">
+                                        <div class="mb-2">
+                                            <label class="form-label mb-1">系統名稱 <span class="text-danger">*</span></label>
+                                            <input type="text" class="form-control form-control-sm text-end" asp-for="SystemName">
+                                        </div>
+                                        <div class="mb-2">
+                                            <label class="form-label mb-1">系統時區 <span class="text-danger">*</span></label>
+                                            <select class="form-select form-select-sm" asp-for="SystemTimezone">
+                                                <option value="(UTC+08:00) 台北、北京、香港">(UTC+08:00) 台北、北京、香港</option>
+                                            </select>
+                                        </div>
+                                        <div class="mb-2">
+                                            <label class="form-label mb-1">系統語言</label>
+                                            <select class="form-select form-select-sm" asp-for="SystemLanguage">
+                                                <option value="zh-TW">繁體中文 (zh-TW)</option>
+                                            </select>
+                                        </div>
+                                        <div class="mb-2">
+                                            <label class="form-label mb-1">日期格式</label>
+                                            <select class="form-select form-select-sm" asp-for="DateFormat">
+                                                <option value="YYYY-MM-DD">YYYY-MM-DD (範例：2024-05-29)</option>
+                                            </select>
+                                        </div>
+                                        <div class="mb-2">
+                                            <label class="form-label mb-1">時間格式</label>
+                                            <select class="form-select form-select-sm" asp-for="TimeFormat">
+                                                <option value="HH:mm:ss">24 小時制 (HH:mm:ss) (範例：14:30:25)</option>
+                                            </select>
+                                        </div>
+                                        <div class="mb-3">
+                                            <label class="form-label mb-1">每頁預設筆數</label>
+                                            <select class="form-select form-select-sm" asp-for="PageSize">
+                                                <option value="20">20 筆</option>
+                                                <option value="50">50 筆</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6">
+                                <div class="card border-0 shadow-sm h-100">
+                                    <div class="card-header bg-white border-0 pt-3 fw-bold"><i class="bi bi-shield-lock text-primary me-2"></i>登入與存取設定</div>
+                                    <div class="card-body fs-7">
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <div>
+                                                <div class="fw-semibold">強制使用雙重驗證 (2FA) <i class="bi bi-info-circle text-muted"></i></div>
+                                            </div>
+                                            <div class="form-check form-switch"><input class="form-check-input" type="checkbox" asp-for="Enable2FA"></div>
+                                        </div>
+                                        <div class="row mb-2 align-items-center">
+                                            <label class="col-8">密碼最小長度</label>
+                                            <div class="col-4"><input type="number" class="form-control form-control-sm text-end" asp-for="MinPasswordLength"></div>
+                                        </div>
+                                        <div class="row mb-2 align-items-center">
+                                            <label class="col-8">密碼有效期限 (天)</label>
+                                            <div class="col-4"><input type="number" class="form-control form-control-sm text-end" asp-for="PasswordExpiryDays"></div>
+                                        </div>
+                                        <div class="row mb-2 align-items-center">
+                                            <label class="col-8">登入逾時時間 (分鐘)</label>
+                                            <div class="col-4"><input type="number" class="form-control form-control-sm text-end" asp-for="SessionTimeout"></div>
+                                        </div>
+                                        <div class="row mb-2 align-items-center">
+                                            <label class="col-8">連續登入失敗鎖定次數</label>
+                                            <div class="col-4"><input type="number" class="form-control form-control-sm text-end" asp-for="LoginFailLockCount"></div>
+                                        </div>
+                                        <div class="row mb-2 align-items-center">
+                                            <label class="col-8">帳號鎖定時間 (分鐘)</label>
+                                            <div class="col-4"><input type="number" class="form-control form-control-sm text-end" asp-for="AccountLockDuration"></div>
+                                        </div>
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <div><div class="fw-semibold">允許同帳號多裝置登入</div></div>
+                                            <div class="form-check form-switch"><input class="form-check-input" type="checkbox" asp-for="AllowMultiDevice"></div>
+                                        </div>
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <div><div class="fw-semibold">啟用 IP 白名單限制 <i class="bi bi-info-circle text-muted"></i></div></div>
+                                            <div class="form-check form-switch"><input class="form-check-input" type="checkbox" asp-for="EnableIpWhitelist"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6">
+                                <div class="card border-0 shadow-sm">
+                                    <div class="card-header bg-white border-0 pt-3 fw-bold"><i class="bi bi-building text-primary me-2"></i>公司資訊設定</div>
+                                    <div class="card-body fs-7">
+                                        <div class="mb-2">
+                                            <label class="form-label mb-1">公司名稱</label>
+                                            <input type="text" class="form-control form-control-sm" asp-for="CompanyName">
+                                        </div>
+                                        <div class="mb-2">
+                                            <label class="form-label mb-1">公司聯絡 Email</label>
+                                            <input type="email" class="form-control form-control-sm" asp-for="CompanyEmail">
+                                        </div>
+                                        <div class="mb-2">
+                                            <label class="form-label mb-1">公司聯絡電話</label>
+                                            <input type="text" class="form-control form-control-sm" asp-for="CompanyPhone">
+                                        </div>
+                                        <div class="mb-2">
+                                            <label class="form-label mb-1">公司地址</label>
+                                            <input type="text" class="form-control form-control-sm" asp-for="CompanyAddress">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6">
+                                <div class="card border-0 shadow-sm h-100">
+                                    <div class="card-header bg-white border-0 pt-3 fw-bold"><i class="bi bi-image text-primary me-2"></i>系統 Logo 設定</div>
+                                    <div class="card-body fs-7">
+                                        <div class="mb-3 p-3 bg-light border rounded text-center">
+                                            <h5 class="text-primary fw-bold mb-0"><i class="bi bi-cloud-lightning-fill"></i> B2bOrder</h5>
+                                        </div>
+                                        <div class="d-flex gap-2 mb-3">
+                                            <button type="button" class="btn btn-outline-primary btn-sm w-50"><i class="bi bi-upload"></i> 變更 Logo</button>
+                                            <button type="button" class="btn btn-outline-danger btn-sm w-50"><i class="bi bi-trash"></i> 移除 Logo</button>
+                                        </div>
+                                        <div class="text-muted" style="font-size: 0.75rem;">
+                                            建議尺寸：320 x 80 px<br>
+                                            支援格式：PNG、JPG、SVG | 檔案大小上限：2MB
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="tab-pane fade @(activeTab == "module" ? "show active" : "")" id="tab-module" role="tabpanel">
+                        <div class="card border-0 shadow-sm p-3">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h6 class="fw-bold m-0">功能模組管理</h6>
+                                <div class="d-flex gap-1 align-items-center">
+                                    <span class="fs-7 text-muted me-2">快速操作：</span>
+                                    <button type="button" onclick="submitBulkAction('ALL_ENABLE')" class="btn btn-outline-success btn-sm p-1 px-2 fs-7"><i class="bi bi-check-lg"></i> 全部啟用</button>
+                                    <button type="button" onclick="submitBulkAction('ALL_DISABLE')" class="btn btn-outline-danger btn-sm p-1 px-2 fs-7"><i class="bi bi-x-lg"></i> 全部停用</button>
+                                    <button type="button" onclick="submitBulkAction('RESET_DEFAULT')" class="btn btn-outline-secondary btn-sm p-1 px-2 fs-7"><i class="bi bi-arrow-counterclockwise"></i> 重設預設</button>
+                                </div>
+                            </div>
+                            <div class="row g-3">
+                                @if (Model.Modules != null && Model.Modules.Any())
+                                {
+                                    @foreach (var mod in Model.Modules)
+                                    {
+                                        <div class="col-md-6">
+                                            <div class="p-2 border rounded bg-white d-flex align-items-center justify-content-between shadow-sm">
+                                                <div class="d-flex align-items-center">
+                                                    <div class="p-2 bg-light rounded text-primary me-2"><i class="bi @mod.Icon fs-5"></i></div>
+                                                    <div>
+                                                        <div class="fw-bold fs-7">@mod.ModuleName</div>
+                                                        <div class="text-muted" style="font-size:0.75rem;">@mod.ModuleDesc</div>
+                                                    </div>
+                                                </div>
+                                                <div class="d-flex align-items-center gap-2">
+                                                    @if (mod.Avalible == "Y")
+                                                    {
+                                                        <span class="badge bg-success-subtle text-success rounded-pill fs-7">已啟用</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="badge bg-secondary-subtle text-secondary rounded-pill fs-7">已停用</span>
+                                                    }
+                                                    <div class="form-check form-switch m-0">
+                                                        <input class="form-check-input module-switch" type="checkbox"
+                                                               name="moduleStates[@mod.ModuleCode]" value="Y"
+                                                               data-code="@mod.ModuleCode" @(mod.Avalible == "Y" ? "checked" : "")>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    }
+                                }
+                                else
+                                {
+                                    <div class="col-12 text-center text-muted fs-7 py-3">目前無功能模組資料。</div>
+                                }
+                            </div>
+                            <div class="text-end mt-3">
+                                <button type="submit" asp-action="SaveModuleConfig" class="btn btn-success btn-sm px-3 shadow-sm"><i class="bi bi-check-circle me-1"></i> 儲存功能設定</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="tab-pane fade @(activeTab == "notice" ? "show active" : "")" id="tab-notice" role="tabpanel">
+                        <div class="card border-0 shadow-sm p-3 mb-3">
+                            <h6 class="fw-bold mb-2">通知管道設定</h6>
+                            <div class="row g-2">
+                                <div class="col-md-3">
+                                    <div class="p-2 border rounded bg-light text-center">
+                                        <i class="bi bi-chat-left-text text-primary fs-5"></i>
+                                        <div class="fw-bold fs-7 mt-1">系統站內信</div>
+                                        <div class="form-check form-switch d-inline-block mt-1"><input class="form-check-input" type="checkbox" checked></div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="p-2 border rounded bg-light text-center">
+                                        <i class="bi bi-envelope text-primary fs-5"></i>
+                                        <div class="fw-bold fs-7 mt-1">Email 郵件</div>
+                                        <div class="form-check form-switch d-inline-block mt-1"><input class="form-check-input" type="checkbox" checked></div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="p-2 border rounded bg-light text-center">
+                                        <i class="bi bi-line text-success fs-5"></i>
+                                        <div class="fw-bold fs-7 mt-1">LINE 推播</div>
+                                        <div class="form-check form-switch d-inline-block mt-1"><input class="form-check-input" type="checkbox" checked></div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="p-2 border rounded bg-light text-center">
+                                        <i class="bi bi-phone text-primary fs-5"></i>
+                                        <div class="fw-bold fs-7 mt-1">FCM 推播</div>
+                                        <div class="form-check form-switch d-inline-block mt-1"><input class="form-check-input" type="checkbox" checked></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card border-0 shadow-sm p-3">
+                            <h6 class="fw-bold mb-2">通知事件設定</h6>
+                            <div class="table-responsive">
+                                <table class="table table-bordered align-middle fs-7 text-center">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th class="text-start">通知事件</th>
+                                            <th>系統站內信</th>
+                                            <th>Email 郵件</th>
+                                            <th>LINE 推播</th>
+                                            <th>FCM 推播</th>
+                                            <th>接收對象</th>
+                                            <th>動作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var ev in Model.NoticeEvents)
+                                        {
+                                            <tr>
+                                                <td class="text-start">
+                                                    <div class="fw-bold text-start">@ev.EventName</div>
+                                                    <div class="small text-muted text-start">@ev.Script</div>
+                                                </td>
+                                                <td><input type="checkbox" class="form-check-input" checked></td>
+                                                <td><input type="checkbox" class="form-check-input" checked></td>
+                                                <td><input type="checkbox" class="form-check-input" checked></td>
+                                                <td><input type="checkbox" class="form-check-input"></td>
+                                                <td>
+                                                    <select class="form-select form-select-sm d-inline-block w-auto py-0">
+                                                        <option>管理員, 會員本人</option>
+                                                    </select>
+                                                </td>
+                                                <td><button type="button" class="btn btn-outline-primary btn-sm py-0 px-2 fs-7"><i class="bi bi-pencil"></i> 編輯</button></td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="tab-pane fade @(activeTab == "integration" ? "show active" : "")" id="tab-integration" role="tabpanel">
+                        <div class="card border-0 shadow-sm p-3">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h6 class="fw-bold m-0">整合服務列表</h6>
+                                <button type="button" class="btn btn-primary btn-sm"><i class="bi bi-plus"></i> 新增整合服務</button>
+                            </div>
+                            <table class="table table-hover align-middle fs-7">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>服務名稱</th>
+                                        <th>說明</th>
+                                        <th>狀態</th>
+                                        <th>上次同步時間</th>
+                                        <th class="text-center">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var ig in Model.Integrations)
+                                    {
+                                        <tr>
+                                            <td class="fw-bold">@ig.ServiceName</td>
+                                            <td class="text-muted">用於整合 @ig.ServiceType 功能服務</td>
+                                            <td>
+                                                @if (ig.ConnectStatus == "CONNECTED")
+                                                {
+                                                    <span class="badge bg-success-subtle text-success rounded-pill px-2">已連線</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="badge bg-secondary-subtle text-secondary rounded-pill px-2">未連線</span>
+                                                }
+                                            </td>
+                                            <td>@(ig.LastSyncDate?.ToString("yyyy-MM-dd HH:mm:ss") ?? "—")</td>
+                                            <td class="text-center">
+                                                <button type="button" class="btn btn-outline-secondary btn-sm p-0 px-2 fs-7">設定</button>
+                                                <button type="button" class="btn btn-outline-primary btn-sm p-0 px-2 fs-7">測試</button>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="tab-pane fade @(activeTab == "security" ? "show active" : "")" id="tab-security" role="tabpanel">
+                        <div class="card border-0 shadow-sm p-3 mb-3">
+                            <h6 class="fw-bold mb-3"><i class="bi bi-shield-lock me-1"></i> 密碼與登入安全</h6>
+                            <div class="list-group list-group-flush fs-7">
+                                <div class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
+                                    <div>
+                                        <div class="fw-bold">密碼複雜度設定</div>
+                                        <div class="text-muted small">設定會員密碼的複雜度規則：至少 8 碼，需包含英文大小寫、數字與特殊符號</div>
+                                    </div>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm fs-7">編輯</button>
+                                </div>
+                                <div class="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
+                                    <div>
+                                        <div class="fw-bold">密碼有效期限</div>
+                                        <div class="text-muted small">設定密碼到期時間，強制更新密碼：90 天</div>
+                                    </div>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm fs-7">編輯</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card border-0 shadow-sm p-3">
+                            <h6 class="fw-bold mb-3"><i class="bi bi-eye me-1"></i> 安全防護狀態</h6>
+                            <div class="d-flex gap-3 fs-7">
+                                <span class="text-success"><i class="bi bi-check-circle-fill"></i> 防暴力破解 (已啟用)</span>
+                                <span class="text-success"><i class="bi bi-check-circle-fill"></i> CSRF 防護 (已啟用)</span>
+                                <span class="text-success"><i class="bi bi-check-circle-fill"></i> XSS 防護 (已啟用)</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="tab-pane fade @(activeTab == "maintain" ? "show active" : "")" id="tab-maintain" role="tabpanel">
+                        <div class="card border-0 shadow-sm p-3 mb-3">
+                            <h6 class="fw-bold mb-3">系統狀態概覽</h6>
+                            <div class="row text-center g-2 fs-7">
+                                <div class="col-md-3"><div class="p-2 border rounded bg-white"><div class="text-muted">伺服器狀態</div><div class="fw-bold text-success">運行中 (28天)</div></div></div>
+                                <div class="col-md-3"><div class="p-2 border rounded bg-white"><div class="text-muted">資料庫狀態</div><div class="fw-bold text-dark">96.5 MB</div></div></div>
+                                <div class="col-md-3"><div class="p-2 border rounded bg-white"><div class="text-muted">記憶體使用率</div><div class="fw-bold text-primary">45.2 %</div></div></div>
+                                <div class="col-md-3"><div class="p-2 border rounded bg-white"><div class="text-muted">磁碟使用率</div><div class="fw-bold text-warning">38.7 %</div></div></div>
+                            </div>
+                        </div>
+                        <div class="card border-0 shadow-sm p-3">
+                            <h6 class="fw-bold mb-2">系統維護工具</h6>
+                            <table class="table align-middle fs-7">
+                                <tbody>
+                                    <tr>
+                                        <td><strong>清除快取</strong><br><span class="text-muted small">清除系統快取資料，釋放記憶體空間</span></td>
+                                        <td>上次執行：2024-05-28 15:30:22</td>
+                                        <td class="text-end"><button type="button" class="btn btn-outline-primary btn-sm fs-7">立即執行</button></td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>最佳化資料庫</strong><br><span class="text-muted small">最佳化資料庫資料表，提升查詢效能</span></td>
+                                        <td>上次執行：2024-05-27 02:00:11</td>
+                                        <td class="text-end"><button type="button" class="btn btn-outline-primary btn-sm fs-7">立即執行</button></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <div class="col-lg-3">
+                <div class="card border-0 shadow-sm mb-3">
+                    <div class="card-header bg-white border-0 pt-3 fw-bold"><i class="bi bi-hdd-network text-primary me-2"></i>系統資訊</div>
+                    <div class="card-body fs-7 text-secondary pt-1">
+                        <div class="d-flex justify-content-between mb-1"><span>系統版本</span><span class="text-dark">v1.0.0</span></div>
+                        <div class="d-flex justify-content-between mb-1"><span>建置日期</span><span class="text-dark">2024-05-20 10:30</span></div>
+                        <div class="d-flex justify-content-between mb-1"><span>資料庫版本</span><span class="text-dark">MySQL 8.0.33</span></div>
+                        <div class="d-flex justify-content-between mb-1"><span>伺服器時間</span><span class="text-dark">2024-05-29 10:30:25</span></div>
+                        <div class="d-flex justify-content-between mb-2"><span>上次備份時間</span><span class="text-dark">2024-05-28 03:00:00</span></div>
+                        <div class="mb-1 small">可用儲存空間 <span class="float-end text-dark fw-bold">78.3 GB / 200 GB (39%)</span></div>
+                        <div class="progress" style="height: 6px;">
+                            <div class="progress-bar bg-primary" role="progressbar" style="width: 39%"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card border-0 shadow-sm mb-3">
+                    <div class="card-header bg-white border-0 pt-3 fw-bold"><i class="bi bi-heart-pulse text-primary me-2"></i>系統狀態</div>
+                    <div class="card-body fs-7 pt-1">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <span><i class="bi bi-check-circle-fill text-success me-2"></i>資料庫連線</span><span class="badge bg-success-subtle text-success rounded-pill">正常</span>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <span><i class="bi bi-check-circle-fill text-success me-2"></i>FCM 推播服務</span><span class="badge bg-success-subtle text-success rounded-pill">正常</span>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <span><i class="bi bi-check-circle-fill text-success me-2"></i>LINE 推播服務</span><span class="badge bg-success-subtle text-success rounded-pill">正常</span>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span><i class="bi bi-check-circle-fill text-success me-2"></i>Email 服務</span><span class="badge bg-success-subtle text-success rounded-pill">正常</span>
+                        </div>
+                        <button type="button" class="btn btn-outline-primary btn-sm w-100 fs-7 mt-1"><i class="bi bi-arrow-clockwise"></i> 檢查系統狀態</button>
+                    </div>
+                </div>
+
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-white border-0 pt-3 fw-bold"><i class="bi bi-lightning text-primary me-2"></i>快捷操作</div>
+                    <div class="list-group list-group-flush fs-7 p-2 pt-0">
+                        <a href="#" class="list-group-item list-group-item-action border-0 rounded py-1 d-flex justify-content-between"><span><i class="bi bi-trash text-muted me-2"></i>清除快取</span><i class="bi bi-chevron-right text-muted"></i></a>
+                        <a href="#" class="list-group-item list-group-item-action border-0 rounded py-1 d-flex justify-content-between"><span><i class="bi bi-database text-muted me-2"></i>備份資料庫</span><i class="bi bi-chevron-right text-muted"></i></a>
+                        <a href="#" class="list-group-item list-group-item-action border-0 rounded py-1 d-flex justify-content-between"><span><i class="bi bi-file-earmark-text text-muted me-2"></i>系統日誌</span><i class="bi bi-chevron-right text-muted"></i></a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+
+<form id="bulkActionForm" asp-action="BulkAction" method="post" style="display:none;">
+    @Html.AntiForgeryToken()
+    <input type="hidden" name="actionType" id="bulkActionType" />
+</form>
+
+@section Scripts {
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            // 自動追蹤上次進入或重新整理後的 Tab 頁籤狀態
+            var triggerEl = document.querySelector('#settingsTab button[id="@activeTab-tab"]');
+            if (triggerEl) {
+                var tab = new bootstrap.Tab(triggerEl);
+                tab.show();
+            }
+
+            // 非同步即時更新：點選個別開關時不用點大儲存也能即時透過 Ajax 寫入資料庫
+            const switches = document.querySelectorAll('.module-switch');
+            switches.forEach(sw => {
+                sw.addEventListener('change', function () {
+                    const moduleCode = this.getAttribute('data-code');
+                    const isAvailable = this.checked;
+
+                    fetch('/SysConfig/ToggleModuleStatus', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            ModuleCode: moduleCode,
+                            IsAvailable: isAvailable
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            console.log(data.message);
+                            // 這裡可以選擇性加入即時變更 Badge 的文字與顏色邏輯
+                            window.location.reload(); // 重新載入以渲染最新狀態與看板
+                        } else {
+                            alert('非同步同步失敗：' + data.message);
+                            this.checked = !isAvailable; // 復原開關
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        this.checked = !isAvailable;
+                    });
+                });
+            });
+        });
+
+        // 提交快速操作的 JavaScript 函數
+        function submitBulkAction(type) {
+            document.getElementById('bulkActionType').value = type;
+            document.getElementById('bulkActionForm').submit();
+        }
+    </script>
+}

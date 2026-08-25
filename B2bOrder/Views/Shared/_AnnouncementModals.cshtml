@@ -1,0 +1,450 @@
+@using B2bOrder.Models.Common
+@model B2bOrder.Models.AnnouncementViewModel
+
+@* 權限/置頂警告 modal *@
+<div class="modal fade"
+     id="announcementWarningModal"
+     tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-warning">
+                <h5 class="modal-title">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                    提醒
+                </h5>
+            </div>
+            <div class="modal-body">
+                目前的發布設定包含【重大公告】或【全面置頂】。
+                <br />
+                這將會覆蓋部分舊有的置頂公告，並發送系統推播。
+                <br /><br />
+                是否仍要直接發布此公告？
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary"
+                        data-bs-dismiss="modal">
+                    取消
+                </button>
+                <button class="btn btn-warning"
+                        onclick="continuePublishAnnouncement()">
+                    仍然發布
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade"
+     id="createAnnouncementModal"
+     tabindex="-1"
+     aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title">
+                    <i class="bi bi-megaphone-fill me-2"></i>
+                    新增系統公告
+                </h5>
+                <button type="button"
+                        class="btn-close btn-close-white"
+                        data-bs-dismiss="modal">
+                </button>
+            </div>
+            <div class="modal-body p-4">
+                <input asp-for="CreateAnnouncement.CreatorSid" type="hidden" />
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label asp-for="CreateAnnouncement.PublishUnit" class="form-label fw-medium">
+                            發布單位 / 發布人
+                        </label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-white border-end-0 text-muted">
+                                <i class="bi bi-building"></i>
+                            </span>
+                            <input asp-for="CreateAnnouncement.PublishUnit"
+                                   class="form-control border-start-0 ps-0"
+                                   readonly />
+                        </div>
+                    </div>
+
+                    <div class="col-md-6 mb-3">
+                        <label asp-for="CreateAnnouncement.Category" class="form-label fw-medium">
+                            公告分類
+                            <span class="text-danger">*</span>
+                        </label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-white border-end-0 text-muted">
+                                <i class="bi bi-tag"></i>
+                            </span>
+                            <select asp-for="CreateAnnouncement.Category"
+                                    class="form-select border-start-0">
+                                <option value="General">一般公告</option>
+                                <option value="Activity">活動通知</option>
+                                <option value="System">系統維護</option>
+                                <option value="Urgent">緊急通報</option>
+                            </select>
+                        </div>
+                        <div class="invalid-feedback"></div>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-12 mb-3">
+                        <label asp-for="CreateAnnouncement.Title" class="form-label fw-medium">
+                            公告標題
+                            <span class="text-danger">*</span>
+                        </label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-white border-end-0 text-muted">
+                                <i class="bi bi-type-h1"></i>
+                            </span>
+                            <input asp-for="CreateAnnouncement.Title"
+                                   class="form-control border-start-0 ps-0"
+                                   placeholder="請輸入公告標題" />
+                        </div>
+                        <div class="invalid-feedback"></div>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-12 mb-3">
+                        <label asp-for="CreateAnnouncement.Content" class="form-label fw-medium">
+                            公告內容
+                            <span class="text-danger">*</span>
+                        </label>
+                        <textarea asp-for="CreateAnnouncement.Content"
+                                  class="form-control"
+                                  rows="5"
+                                  placeholder="請輸入公告詳細內容..."></textarea>
+                        <div class="invalid-feedback"></div>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label asp-for="CreateAnnouncement.StartDate" class="form-label fw-medium">
+                            上架日期
+                            <span class="text-danger">*</span>
+                        </label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-white border-end-0 text-muted">
+                                <i class="bi bi-calendar-range"></i>
+                            </span>
+                            <input asp-for="CreateAnnouncement.StartDate"
+                                   type="date"
+                                   class="form-control border-start-0 ps-0" />
+                        </div>
+                        <div class="invalid-feedback"></div>
+                    </div>
+
+                    <div class="col-md-6 mb-3">
+                        <label asp-for="CreateAnnouncement.EndDate" class="form-label fw-medium">
+                            下架日期
+                            <span class="text-danger">*</span>
+                        </label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-white border-end-0 text-muted">
+                                <i class="bi bi-calendar-x"></i>
+                            </span>
+                            <input asp-for="CreateAnnouncement.EndDate"
+                                   type="date"
+                                   class="form-control border-start-0 ps-0" />
+                        </div>
+                        <div class="invalid-feedback"></div>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-12 mb-3">
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="checkbox" asp-for="CreateAnnouncement.IsTop" />
+                            <label class="form-check-label fw-medium" asp-for="CreateAnnouncement.IsTop">置頂此公告</label>
+                        </div>
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="checkbox" asp-for="CreateAnnouncement.SendPushNotification" />
+                            <label class="form-check-label fw-medium" asp-for="CreateAnnouncement.SendPushNotification">同步發送 APP 推播</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button"
+                        class="btn btn-outline-secondary"
+                        data-bs-dismiss="modal">
+                    <i class="bi bi-x-circle me-1"></i>
+                    取消
+                </button>
+                <button type="button"
+                        class="btn btn-success"
+                        onclick="createAnnouncement()">
+                    <i class="bi bi-send-check-fill me-1"></i>
+                    發布公告
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@* 編輯公告 modal *@
+<div class="modal fade"
+     id="editAnnouncementModal"
+     tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-pencil-square"></i>
+                    編輯公告內容
+                </h5>
+                <button type="button"
+                        class="btn-close"
+                        data-bs-dismiss="modal">
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="editAnnouncementForm">
+                    <input asp-for="EditAnnouncement.Sid" type="hidden" />
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label asp-for="EditAnnouncement.PublishUnit" class="form-label fw-medium">發布單位</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-building"></i></span>
+                                <input asp-for="EditAnnouncement.PublishUnit" class="form-control" readonly />
+                            </div>
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label asp-for="EditAnnouncement.Category" class="form-label fw-medium">公告分類</label>
+                            <select asp-for="EditAnnouncement.Category" class="form-select">
+                                <option value="General">一般公告</option>
+                                <option value="Activity">活動通知</option>
+                                <option value="System">系統維護</option>
+                                <option value="Urgent">緊急通報</option>
+                            </select>
+                        </div>
+
+                        <div class="col-md-12 mb-3">
+                            <label asp-for="EditAnnouncement.Title" class="form-label fw-medium">公告標題</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-type-h1"></i></span>
+                                <input asp-for="EditAnnouncement.Title" class="form-control" />
+                            </div>
+                            <div class="invalid-feedback"></div>
+                        </div>
+
+                        <div class="col-md-12 mb-3">
+                            <label asp-for="EditAnnouncement.Content" class="form-label fw-medium">公告內容</label>
+                            <textarea asp-for="EditAnnouncement.Content" class="form-control" rows="5"></textarea>
+                            <div class="invalid-feedback"></div>
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label asp-for="EditAnnouncement.StartDate" class="form-label fw-medium">上架日期</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-calendar-range"></i></span>
+                                <input asp-for="EditAnnouncement.StartDate" type="date" class="form-control" />
+                            </div>
+                            <div class="invalid-feedback"></div>
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label asp-for="EditAnnouncement.EndDate" class="form-label fw-medium">下架日期</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-calendar-x"></i></span>
+                                <input asp-for="EditAnnouncement.EndDate" type="date" class="form-control" />
+                            </div>
+                            <div class="invalid-feedback"></div>
+                        </div>
+
+                        <div class="col-md-12 mb-3">
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="checkbox" asp-for="EditAnnouncement.IsTop" />
+                                <label class="form-check-label fw-medium" asp-for="EditAnnouncement.IsTop">置頂此公告</label>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary"
+                        data-bs-dismiss="modal">
+                    取消
+                </button>
+                <button class="btn btn-primary"
+                        onclick="saveAnnouncement()">
+                    <i class="bi bi-save"></i>
+                    儲存修改
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@* 檢視公告 modal *@
+<div class="modal fade" id="viewAnnouncementModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-secondary text-white">
+                <h5 class="modal-title">
+                    <i class="bi bi-eye-fill"></i>
+                    檢視公告明細
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="viewAnnouncementForm">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-medium">發布單位</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-building"></i></span>
+                                <input asp-for="ViewAnnouncement.PublishUnit" class="form-control" readonly />
+                            </div>
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-medium">公告分類</label>
+                            <input asp-for="ViewAnnouncement.Category" type="text" class="form-control" readonly />
+                        </div>
+
+                        <div class="col-md-12 mb-3">
+                            <label class="form-label fw-medium">公告標題</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-type-h1"></i></span>
+                                <input asp-for="ViewAnnouncement.Title" class="form-control" readonly />
+                            </div>
+                        </div>
+
+                        <div class="col-md-12 mb-3">
+                            <label class="form-label fw-medium">公告內容</label>
+                            <textarea asp-for="ViewAnnouncement.Content" class="form-control" rows="5" readonly></textarea>
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-medium">上架日期</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-calendar-range"></i></span>
+                                <input asp-for="ViewAnnouncement.StartDate" type="date" class="form-control" readonly />
+                            </div>
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-medium">下架日期</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-calendar-x"></i></span>
+                                <input asp-for="ViewAnnouncement.EndDate" type="date" class="form-control" readonly />
+                            </div>
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-medium">狀態/點閱數</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-graph-up"></i></span>
+                                <input value="點閱次數：@Model.ViewAnnouncement.ClickCount 次" class="form-control" readonly />
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">關閉</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@* 刪除/撤下公告 modal *@
+<div class="modal fade"
+     id="deleteAnnouncementModal"
+     tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    下架 / 刪除公告選單
+                </h5>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="deleteAnnouncementSid" />
+
+                <div id="deleteAnnouncementTitle" class="mb-3 fw-bold text-truncate text-danger">
+                </div>
+
+                <div class="form-check">
+                    <input class="form-check-input"
+                           type="radio"
+                           name="deleteType"
+                           value="ARCHIVE"
+                           checked>
+                    <label class="form-check-label">
+                        僅提前下架並封存（保留歷史紀錄）
+                    </label>
+                </div>
+
+                <div class="form-check">
+                    <input class="form-check-input"
+                           type="radio"
+                           name="deleteType"
+                           value="PERMANENT">
+                    <label class="form-check-label">
+                        徹底從資料庫中刪除（不可復原）
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary"
+                        data-bs-dismiss="modal">
+                    取消
+                </button>
+                <button class="btn btn-danger"
+                        onclick="showAnnouncementDeleteConfirmModal()">
+                    確認執行
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade"
+     id="deleteConfirmModal"
+     tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    最終刪除確認
+                </h5>
+                <button type="button"
+                        class="btn-close btn-close-white"
+                        data-bs-dismiss="modal">
+                </button>
+            </div>
+            <div class="modal-body text-center">
+                <i class="bi bi-trash-fill text-danger" style="font-size:60px;"></i>
+                <h5 class="mt-3">確定永久抹除此公告資料？</h5>
+                <div class="mt-2">
+                    <span id="confirmDeleteAnnouncementTitle" class="fw-bold text-danger"></span>
+                </div>
+                <div class="mt-3 text-muted">
+                    此操作將連同前後台的瀏覽紀錄與附件檔案一併清除。
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button"
+                        class="btn btn-secondary"
+                        data-bs-dismiss="modal">
+                    返回
+                </button>
+                <button type="button"
+                        class="btn btn-danger"
+                        onclick="deleteAnnouncementConfirm()">
+                    <i class="bi bi-trash-fill me-1"></i>
+                    確定永久刪除
+                </button>
+            </div>
+        </div>
+    </div>
+</div>

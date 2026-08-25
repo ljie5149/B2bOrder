@@ -1,0 +1,369 @@
+﻿/* ==========================================================================
+   1. 畫布與容器設定 (Canvas & Container)
+   ========================================================================== */
+.organization-container {
+    overflow: auto;
+    height: calc(100vh - 250px);
+    cursor: default;
+    background: #f8f9fa;
+    position: relative;
+    user-select: none; /* 避免拖曳平移時選取到文字 */
+}
+
+    .organization-container:active {
+        cursor: grabbing;
+    }
+
+.org-tree-root {
+    transform-origin: center top;
+    transition: transform .1s ease-out;
+    padding: 20px;
+    width: max-content;
+    margin: 0 auto;
+}
+/* ==========================================================================
+   2. 核心樹狀圖連線系統 (純邊框完美無縫版)
+   ========================================================================== */
+
+/* 父節點往下的那條垂直線 */
+.tree-line-vertical {
+    width: 2px !important;
+    height: 25px !important;
+    background-color: #cbd5e1 !important;
+    margin: 0 auto !important;
+    display: block !important;
+    position: relative !important;
+    z-index: 1 !important;
+}
+
+/* 子節點往上的單純垂直線 (移除上一版的所有 border 裝飾) */
+.tree-line-child {
+    width: 2px !important;
+    height: 25px !important;
+    background-color: #cbd5e1 !important;
+    position: relative !important;
+    margin: 0 auto !important;
+    display: block !important;
+    z-index: 2 !important;
+}
+
+/* 子節點的外層包裹器 */
+/* 🟢 修正：讓子節點包裹器也變成 flex 排列，這樣就算後端拆成多個容器，也能在橫向無縫拼起來 */
+.children-container {
+    display: flex !important;
+    justify-content: center !important;
+    align-items: flex-start !important;
+    width: max-content !important; /* 讓寬度隨內容撐開，不要鎖死 100% */
+    margin: 0 auto !important;
+}
+
+/* 🟢 修正：父層的 children 容器，如果是多個容器並存，要讓他們橫向緊貼 */
+.children {
+    display: flex !important;
+    justify-content: center !important;
+    align-items: flex-start !important;
+    position: relative !important;
+}
+
+/* 🟢 修正：解決卡片直接肉搏貼在一起的問題，確保不管是同容器還是跨容器，都有穩定的間距 */
+.child-node {
+    position: relative !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    flex: 0 0 auto !important; /* 防止因為寬度擠壓導致卡片變形 */
+    padding: 0 15px !important; /* 確保左右各有 15px 間距 */
+}
+
+    /* --------------------------------------------------------------------------
+   經典去頭去尾邏輯 - 全域容器防呆版
+   由於可能存在多個 .children，我們不能單純用 :first-child，否則每個容器的頭尾都會被切斷
+   -------------------------------------------------------------------------- */
+
+    /* 預設讓所有子節點的水平線都拉滿 */
+    .child-node::before {
+        content: "" !important;
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100% !important;
+        height: 2px !important;
+        border-top: 2px solid #cbd5e1 !important;
+        z-index: 1 !important;
+    }
+
+/* 🔴 只有當前這個「大分支」的絕對最左邊，水平線才從 50% 開始 */
+.children:first-child > .child-node:first-child::before {
+    left: 50% !important;
+    width: 50% !important;
+}
+
+/* 🔴 只有當前這個「大分支」的絕對最右邊，水平線才到 50% 截止 */
+.children:last-child > .child-node:last-child::before {
+    left: 0 !important;
+    width: 50% !important;
+}
+
+/* 🟢 當只有一個下線時，完全隱藏頂部橫線 */
+.children:only-child > .child-node:only-child::before {
+    display: none !important;
+}
+
+/* ==========================================================================
+   3. 會員卡片節點樣式 (Member Node Card)
+   ========================================================================== */
+.node-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+    width: max-content;
+    margin: 0 auto;
+}
+
+/* 一般會員卡片基底 */
+.member-node {
+    width: 250px;
+    min-width: 150px;
+    max-width: 450px;
+    padding: 15px 12px 45px 12px;
+    border: 1px solid #dce3f0;
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: 0 2px 6px rgba(0,0,0,.08);
+    position: relative;
+    text-align: center;
+    transition: all 0.2s ease;
+}
+
+/* 直銷商卡片高亮樣式 */
+.member-distributor {
+    border: 1px solid #60a5fa;
+    box-shadow: 0 0 8px rgba(59,130,246,.35), 0 4px 12px rgba(59,130,246,.25);
+}
+
+/* 卡片內文字與內容排版 */
+.member-avatar {
+    margin-bottom: 8px;
+}
+
+    .member-avatar i {
+        font-size: 3rem;
+        color: #6c757d;
+    }
+
+/* 直銷商的大頭貼顏色 */
+.avatar-distributor {
+    color: #0d6efd !important;
+}
+
+.member-name {
+    font-size: 16px;
+    font-weight: 600;
+    color: #1e293b;
+    margin-bottom: 2px;
+}
+
+.member-mid {
+    font-size: 13px;
+    color: #64748b;
+    margin-bottom: 6px;
+}
+
+.member-role {
+    margin-bottom: 6px;
+}
+
+.member-team {
+    font-size: 12px;
+    color: #475569;
+    font-weight: 500;
+}
+
+/* ==========================================================================
+   4. 功能按鈕與工具列 (Toolbars & Buttons)
+   ========================================================================== */
+
+/* 右上角操作工具列 */
+.node-toolbar {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: flex;
+    gap: 4px;
+}
+
+/* 通用按鈕基礎設定 */
+.btn-add-member,
+.btn-edit-member,
+.btn-renew-member,
+.btn-delete-member {
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: 6px;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.2s;
+    padding: 0;
+}
+
+/* 新增下線按鈕 (綠色) */
+.btn-add-member {
+    background: #16a34a;
+}
+
+    .btn-add-member:hover {
+        background: #15803d;
+    }
+
+/* 編輯會員按鈕 (橘黃色) */
+.btn-edit-member {
+    background: #f59e0b;
+}
+
+    .btn-edit-member:hover {
+        background: #d97706;
+    }
+
+/* 已續約按鈕 (藍色) */
+.btn-renew-member {
+    background: #0d6efd;
+}
+
+    .btn-renew-member:hover {
+        background: #0b5ed7;
+    }
+
+/* 左下角/右下角刪除區域 */
+.delete-area {
+    position: absolute;
+    right: 6px;
+    bottom: 6px;
+}
+
+/* 刪除會員按鈕 (紅色) */
+.btn-delete-member {
+    background: #dc2626;
+}
+
+    .btn-delete-member:hover {
+        background: #b91c1c;
+    }
+
+/* ==========================================================================
+   5. 展開 / 收合功能樣式 (Collapse / Expand)
+   ========================================================================== */
+.collapse-wrapper {
+    position: absolute;
+    left: 50%;
+    bottom: 8px;
+    transform: translateX(-50%);
+    display: flex;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    z-index: 3;
+}
+
+/* 預設狀態（展開時）：原來的灰色系 */
+.btn-collapse {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: 1px solid #d1d5db;
+    background: #f3f4f6;
+    color: #6b7280;
+    font-size: 16px;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    cursor: pointer;
+    transition: all 0.2s ease-in-out; /* 加上平滑漸變動畫 */
+}
+
+    /* 展開狀態時的 Hover */
+    .btn-collapse:hover {
+        background: #e5e7eb;
+        color: #374151;
+        border-color: #9ca3af;
+    }
+
+/* ==========================================================================
+    新增：當父層為收合狀態 (is-collapsed) 時，按鈕變為綠色系
+   ========================================================================== */
+.node-wrapper.is-collapsed .btn-collapse {
+    background: #16a34a !important; /* 綠色背景 */
+    color: #ffffff !important; /* 白色加號文字 */
+    border-color: #15803d !important; /* 深綠色邊框 */
+}
+
+    /* 收合狀態時的 Hover 變深綠 */
+    .node-wrapper.is-collapsed .btn-collapse:hover {
+        background: #15803d !important;
+        border-color: #166534 !important;
+    }
+
+/* ==========================================================================
+   6. 搜尋功能高亮動畫 (Search Highlight Animation)
+   ========================================================================== */
+.search-highlight {
+    animation: nodeFlash 1s ease-in-out 3;
+    border: 2px solid #dc3545 !important; /* 強制紅色外框加強視覺 */
+}
+
+@keyframes nodeFlash {
+    0% {
+        box-shadow: 0 0 0 0px rgba(220, 53, 69, 0);
+    }
+
+    50% {
+        box-shadow: 0 0 0 10px rgba(220, 53, 69, 0.4), 0 0 20px 5px rgba(220, 53, 69, 0.6);
+        transform: scale(1.03); /* 閃爍時輕微放大，更容易被注意到 */
+    }
+
+    100% {
+        box-shadow: 0 0 0 0px rgba(220, 53, 69, 0);
+    }
+}
+
+/* ==========================================================================
+   7. 純淡入淡出與空間釋放動態系統 (Fade + Space Collapse) - 保持原色版
+   ========================================================================== */
+
+/* --- 基礎狀態：定義展開時的透明度與空間 --- */
+.tree-line-vertical,
+.children-container {
+    transition: opacity 0.3s ease-in-out, visibility 0.3s ease-in-out, max-height 0.3s ease-in-out, max-width 0.3s ease-in-out, padding 0.3s ease-in-out !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
+    max-height: 5000px;
+    max-width: 10000px;
+    overflow: visible !important;
+}
+
+/* --- 收合狀態 (is-collapsed)：隱藏並釋放空間，防止撐大畫布捲軸 --- */
+
+/* 1. 隱藏當前層級的垂直下導線 */
+.node-wrapper.is-collapsed > .tree-line-vertical {
+    opacity: 0 !important;
+    visibility: hidden !important;
+    max-height: 0 !important;
+}
+
+/* 2. 隱藏當前層級的下線節點容器 */
+.node-wrapper.is-collapsed > .children-container {
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+    max-height: 0 !important;
+    max-width: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important; /* 徹底裁剪，讓隱形的下線不佔據任何畫布寬高 */
+}

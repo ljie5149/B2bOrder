@@ -1,0 +1,503 @@
+@using B2bOrder.Models.Common
+@model B2bOrder.Models.MemberListViewModel
+@{
+    ViewData["Title"] = "會員列表";
+
+    var keyword = ViewBag.Keyword as string ?? "";
+    var status = ViewBag.Status as string ?? "";
+    int page =
+        Convert.ToInt32(ViewBag.Page);
+
+    int total =
+        Convert.ToInt32(ViewBag.Total);
+
+    int pageSize =
+        Convert.ToInt32(ViewBag.PageSize);
+
+    int totalPages =
+        (int)Math.Ceiling(
+            total / (double)pageSize
+        );
+
+    // 計算目前的起始編號基礎值
+    int startNumber = (page - 1) * pageSize;
+    int index = 1;
+
+    string nextDir(string field)
+    {
+        return ViewBag.SortField == field &&
+               ViewBag.SortDir == "asc"
+               ? "desc"
+               : "asc";
+    }
+}
+
+<div class="container-fluid py-4">
+
+    <!-- 標題 -->
+    <div class="mb-4">
+
+        <h1 class="fw-bold mb-2">
+            @ViewData["Title"]
+        </h1>
+
+        <div class="text-muted">
+            管理所有會員編號與基本資料
+        </div>
+
+    </div>
+
+    <!-- 功能列 -->
+    <div class="card border-0 shadow-sm mb-3">
+
+        <div class="card-body">
+
+            <div class="row g-3">
+
+                <div class="col-md-6">
+
+                @if (SysDefine.Import) {
+                    <button type="button"
+                            class="btn btn-success"
+                            onclick="showImportModal()">
+
+                        <i class="bi bi-download"></i>
+                        匯入
+
+                    </button>
+                }
+                
+                @if (SysDefine.Export) {
+                    <button type="button"
+                            class="btn btn-info text-white"
+                            onclick="showExportModal()">
+
+                        <i class="bi bi-upload"></i>
+                        匯出
+
+                    </button>
+                }
+
+                    <button class="btn btn-light border" onclick="location.reload();">
+
+                        <i class="bi bi-arrow-clockwise"></i>
+
+                    </button>
+
+                </div>
+
+                <div class="col-md-6">
+
+                    <form method="get">
+
+                        <div class="input-group">
+
+                            <select class="form-select"
+                                    name="status"
+                                    style="max-width:160px;">
+
+                                <option value=""
+                                        selected="@(string.IsNullOrEmpty(status))">
+                                    狀態：全部
+                                </option>
+
+                                <option value="Y"
+                                        selected="@(status == "Y")">
+                                    可用
+                                </option>
+
+                                <option value="D"
+                                        selected="@(status == "D")">
+                                    停用
+                                </option>
+
+                            </select>
+
+                            <input type="text"
+                                   name="keyword"
+                                   class="form-control"
+                                   placeholder="請輸入關鍵字"
+                                   value="@keyword" />
+
+                            <button class="btn btn-outline-secondary">
+
+                                <i class="bi bi-search"></i>
+
+                            </button>
+
+                        </div>
+
+                    </form>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- 表格 -->
+    <div class="card border-0 shadow-sm">
+
+        <div class="table-responsive">
+
+            <table class="table align-middle mb-0">
+
+                <thead class="table-light">
+                    <tr>
+
+                        <th width="50">
+                            <input type="checkbox" />
+                        </th>
+
+                        <th width="80">編號</th> @* <-- 在第二欄加入編號標頭 *@
+
+                        <th hidden>
+                            <a asp-action="List"
+                               asp-route-keyword="@keyword"
+                               asp-route-status="@status"
+                               asp-route-sortField="sid"
+                               asp-route-sortDir="@nextDir("sid")"
+                               class="text-decoration-none text-dark">
+
+                                序號
+
+                                @if (ViewBag.SortField == "sid")
+                                {
+                                    <i class="bi @(ViewBag.SortDir == "asc"
+                                                                         ? "bi-sort-alpha-down"
+                                                                         : "bi-sort-alpha-up")"></i>
+                                }
+
+                            </a>
+                        </th>
+
+                        <th>
+                            <a asp-action="List"
+                               asp-route-keyword="@keyword"
+                               asp-route-status="@status"
+                               asp-route-sortField="mid"
+                               asp-route-sortDir="@nextDir("mid")"
+                               class="text-decoration-none text-dark">
+
+                                會員編號
+
+                                @if (ViewBag.SortField == "mid")
+                                {
+                                    <i class="bi @(ViewBag.SortDir == "asc"
+                                                                         ? "bi-sort-down"
+                                                                         : "bi-sort-up")"></i>
+                                                                }
+
+                            </a>
+                        </th>
+
+                        <th>
+                            <a asp-action="List"
+                               asp-route-keyword="@keyword"
+                               asp-route-status="@status"
+                               asp-route-sortField="name"
+                               asp-route-sortDir="@nextDir("name")"
+                               class="text-decoration-none text-dark">
+
+                                姓名
+
+                                @if (ViewBag.SortField == "name")
+                                {
+                                    <i class="bi @(ViewBag.SortDir == "asc"
+                                                                         ? "bi-sort-down"
+                                                                         : "bi-sort-up")"></i>
+                                                                }
+
+                            </a>
+                        </th>
+
+                        <th>
+                            <a asp-action="List"
+                               asp-route-keyword="@keyword"
+                               asp-route-status="@status"
+                               asp-route-sortField="role"
+                               asp-route-sortDir="@nextDir("role")"
+                               class="text-decoration-none text-dark">
+
+                                角色
+
+                                @if (ViewBag.SortField == "role")
+                                {
+                                    <i class="bi @(ViewBag.SortDir == "asc"
+                                                                         ? "bi-sort-down"
+                                                                         : "bi-sort-up")"></i>
+                                                                }
+
+                            </a>
+                        </th>
+
+                        <th>
+                            <a asp-action="List"
+                               asp-route-keyword="@keyword"
+                               asp-route-status="@status"
+                               asp-route-sortField="mobile"
+                               asp-route-sortDir="@nextDir("mobile")"
+                               class="text-decoration-none text-dark">
+
+                                手機
+
+                                @if (ViewBag.SortField == "mobile")
+                                {
+                                    <i class="bi @(ViewBag.SortDir == "asc"
+                                                                         ? "bi-sort-down"
+                                                                         : "bi-sort-up")"></i>
+                                                                }
+
+                            </a>
+                        </th>
+
+                        <th>
+                            <a asp-action="List"
+                               asp-route-keyword="@keyword"
+                               asp-route-status="@status"
+                               asp-route-sortField="continueDate"
+                               asp-route-sortDir="@nextDir("continueDate")"
+                               class="text-decoration-none text-dark">
+
+                                到期日
+
+                                @if (ViewBag.SortField == "continueDate")
+                                {
+                                    <i class="bi @(ViewBag.SortDir == "asc"
+                                                                         ? "bi-sort-numeric-down"
+                                                                         : "bi-sort-numeric-up")"></i>
+                                                                }
+
+                            </a>
+                        </th>
+
+                        <th>
+                            <a asp-action="List"
+                               asp-route-keyword="@keyword"
+                               asp-route-status="@status"
+                               asp-route-sortField="avalible"
+                               asp-route-sortDir="@nextDir("avalible")"
+                               class="text-decoration-none text-dark">
+
+                                狀態
+
+                                @if (ViewBag.SortField == "avalible")
+                                {
+                                    <i class="bi @(ViewBag.SortDir == "asc"
+                                                                         ? "bi-sort-down"
+                                                                         : "bi-sort-up")"></i>
+                                                                }
+
+                            </a>
+                        </th>
+
+                        <th width="180">
+                            操作
+                        </th>
+
+                    </tr>
+                </thead>
+
+                <tbody>
+
+                    @if (Model.Members.Any())
+                    {
+                        @foreach (var item in Model.Members)
+                        {
+                            // 計算當前這一筆的正確編號
+                            int currentNo = startNumber + index;
+
+                            bool expired =
+                            item.ContinueDate.HasValue &&
+                            item.ContinueDate.Value.Date < DateTime.Today;
+
+                            <tr>
+
+                                <td>
+                                    <input type="checkbox" />
+                                </td>
+
+                                <td>@currentNo</td>
+
+                                <td hidden>
+                                    @item.Sid
+                                </td>
+
+                                <td>
+                                    @item.Mid
+                                </td>
+
+                                <td>
+                                    @item.Name
+                                </td>
+
+                                <td>
+
+                                    <span class="badge @MemberRoles.GetBadgeClass(item.Role)">
+                                        @MemberRoles.GetName(item.Role)
+                                    </span>
+
+                                </td>
+
+                                <td>
+                                    @item.Mobile
+                                </td>
+
+                                <td>
+
+                                    @if (expired)
+                                    {
+                                        <span class="text-danger fw-bold">
+                                            @item.ContinueDate?.ToString("yyyy-MM-dd")
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        @item.ContinueDate?.ToString("yyyy-MM-dd")
+                                    }
+
+                                </td>
+
+                                <td>
+
+                                    @if (item.Avalible == "Y")
+                                    {
+                                        <span class="badge bg-success">
+                                            可用
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-warning text-dark">
+                                            停用
+                                        </span>
+                                    }
+
+                                </td>
+
+                                <td>
+                                    <button type="button"
+                                            title="新增下線"
+                                            class="btn btn-primary btn-sm"
+                                            onclick="showCreateMemberModal('@item.Sid', '@item.Mid', '@item.Role')">
+                                        <i class="bi bi-person-plus-fill"></i>
+
+                                    </button>
+
+                                    <button type="button"
+                                            title="會員續約"
+                                            class="btn btn-success btn-sm"
+                                            onclick="renewMember('@item.Sid','@item.Mid')">
+
+                                        <i class="bi bi-arrow-repeat"></i>
+
+                                    </button>
+
+                                    <button type="button"
+                                            title="編輯會員"
+                                            class="btn btn-warning btn-sm"
+                                            onclick="showEditMemberModal('@item.Sid')">
+
+                                        <i class="bi bi-pencil-square"></i>
+
+                                    </button>
+
+                                    <button class="btn btn-sm btn-outline-danger"
+                                            title="刪除會員"
+                                            onclick="showDeleteDialog('@item.Sid','@item.Mid')">
+
+                                        <i class="bi bi-trash-fill"></i>
+
+                                    </button>
+                                </td>
+
+                            </tr>
+
+                            index++; // 累加索引
+                        }
+                    }
+                    else
+                    {
+                        <tr>
+
+                            <td colspan="9"
+                                class="text-center py-5">
+
+                                查無資料
+
+                            </td>
+
+                        </tr>
+                    }
+
+                </tbody>
+
+            </table>
+
+        </div>
+
+        <!-- 分頁 -->
+        <div class="card-footer bg-white">
+
+            <div class="d-flex justify-content-between align-items-center">
+
+                <div>
+
+                    顯示第
+                    @((page - 1) * pageSize + 1)
+
+                    ~
+
+                    @(Math.Min(page * pageSize, total))
+
+                    筆，共
+
+                    @total
+
+                    筆
+
+                </div>
+
+                <nav>
+
+                    <ul class="pagination mb-0">
+
+                        @for (int i = 1; i <= totalPages; i++)
+                        {
+                            <li class="page-item @(i == page ? "active" : "")">
+
+                                <a class="page-link"
+                                   asp-action="List"
+                                   asp-route-page="@i"
+                                   asp-route-keyword="@keyword"
+                                   asp-route-status="@status"
+                                   asp-route-sortField="@ViewBag.SortField"
+                                   asp-route-sortDir="@ViewBag.SortDir">
+
+                                    @i
+
+                                </a>
+
+                            </li>
+                        }
+
+                    </ul>
+
+                </nav>
+
+            </div>
+
+        </div>
+
+        <partial name="_MemberModals"
+                 model="(MemberModalViewModel)ViewBag.ModalModel" />
+    </div>
+
+</div>
+@section Scripts
+{
+    <script src="~/js/signalr.min.js"></script>
+    <script src="~/js/member.js"></script>
+}

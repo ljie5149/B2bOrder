@@ -1,0 +1,1300 @@
+@using B2bOrder.Models.Common
+@model B2bOrder.Models.MemberModalViewModel
+
+@* 一般會員警告 modal *@
+<div class="modal fade"
+     id="normalMemberWarningModal"
+     tabindex="-1">
+
+    <div class="modal-dialog">
+
+        <div class="modal-content">
+
+            <div class="modal-header bg-warning">
+
+                <h5 class="modal-title">
+
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                    提醒
+
+                </h5>
+
+            </div>
+
+            <div class="modal-body">
+
+                此會員為【一般會員】。
+
+                <br />
+                一般會員通常不具備推薦下線資格。
+
+                <br /><br />
+
+                是否仍要新增下線會員？
+
+            </div>
+
+            <div class="modal-footer">
+
+                <button class="btn btn-secondary"
+                        data-bs-dismiss="modal">
+
+                    取消
+
+                </button>
+
+                <button class="btn btn-warning"
+                        onclick="continueCreateMember()">
+
+                    仍然新增
+
+                </button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+<!-- 新增會員 Modal -->
+<div class="modal fade"
+     id="createMemberModal"
+     tabindex="-1"
+     aria-hidden="true">
+
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+
+        <div class="modal-content border-0 shadow">
+
+            <!-- Header -->
+            <div class="modal-header bg-success text-white">
+
+                <h5 class="modal-title">
+                    <i class="bi bi-person-plus-fill me-2"></i>
+                    新增下線會員
+                </h5>
+
+                <button type="button"
+                        class="btn-close btn-close-white"
+                        data-bs-dismiss="modal">
+                </button>
+
+            </div>
+
+            <!-- Body -->
+            <div class="modal-body p-4">
+
+                <input asp-for="CreateMember.ParentSid" type="hidden" />
+
+                <div class="row">
+
+                    <!-- 推薦人 -->
+                    <div class="col-md-6 mb-3">
+
+                        <label asp-for="CreateMember.ParentMid" class="form-label fw-medium">
+                            推薦人會員編號
+                        </label>
+
+                        <div class="input-group">
+
+                            <span class="input-group-text bg-white border-end-0 text-muted">
+                                <i class="bi bi-diagram-3"></i>
+                            </span>
+
+                            <input asp-for="CreateMember.ParentMid"
+                                   class="form-control border-start-0 ps-0"
+                                   readonly />
+
+                        </div>
+
+                    </div>
+
+                    <!-- 會員編號 -->
+                    <div class="col-md-6 mb-3">
+
+                        <label asp-for="CreateMember.Mid" class="form-label fw-medium">
+                            會員編號
+                            <span class="text-danger">*</span>
+                        </label>
+
+                        <div class="input-group">
+
+                            <span class="input-group-text bg-white border-end-0 text-muted">
+                                <i class="bi bi-person"></i>
+                            </span>
+
+                            <input asp-for="CreateMember.Mid"
+                                   class="form-control border-start-0 ps-0"
+                                   placeholder="請輸入會員編號" />
+
+                        </div>
+
+                        <div class="invalid-feedback"></div>
+                    </div>
+
+                </div>
+
+                <div class="row">
+
+                    <!-- 姓名 -->
+                    <div class="col-md-6 mb-3">
+
+                        <label asp-for="CreateMember.Name" class="form-label fw-medium">
+                            姓名
+                            <span class="text-danger">*</span>
+                        </label>
+
+                        <div class="input-group">
+
+                            <span class="input-group-text bg-white border-end-0 text-muted">
+                                <i class="bi bi-person-vcard"></i>
+                            </span>
+
+                            <input asp-for="CreateMember.Name"
+                                   class="form-control border-start-0 ps-0"
+                                   placeholder="請輸入姓名" />
+
+                        </div>
+
+                        <div class="invalid-feedback"></div>
+
+                    </div>
+
+                    <!-- 會員角色 -->
+                    <div class="col-md-6 mb-3">
+
+                        <label asp-for="CreateMember.Role" class="form-label fw-medium">
+                            會員角色
+                            <span class="text-danger">*</span>
+                        </label>
+
+                        <div class="input-group">
+
+                            <span class="input-group-text bg-white border-end-0 text-muted">
+                                <i class="bi bi-person-badge"></i>
+                            </span>
+
+                            <select asp-for="CreateMember.Role"
+                                    class="form-select border-start-0">
+
+                                <option value="Stc">
+                                    一般會員
+                                </option>
+
+                                <option value="Smn">
+                                    直銷商
+                                </option>
+
+                                <option value="Ctl">
+                                    管理員
+                                </option>
+
+                            </select>
+
+                        </div>
+
+                        <div class="invalid-feedback"></div>
+
+                    </div>
+
+                </div>
+
+                <div class="row">
+
+                    <!-- 手機 -->
+                    <div class="col-md-6 mb-3">
+
+                        <label asp-for="CreateMember.Mobile" class="form-label fw-medium">
+                            手機
+                        </label>
+
+                        <div class="input-group">
+
+                            <span class="input-group-text bg-white border-end-0 text-muted">
+                                <i class="bi bi-phone"></i>
+                            </span>
+
+                            <input asp-for="CreateMember.Mobile"
+                                   class="form-control border-start-0 ps-0"
+                                   placeholder="請輸入手機號碼" />
+
+                        </div>
+
+                        <div class="invalid-feedback"></div>
+
+                    </div>
+
+                    <!-- Email -->
+                    <div class="col-md-6 mb-3">
+
+                        <label asp-for="CreateMember.Email" class="form-label fw-medium">
+                            Email
+                        </label>
+
+                        <div class="input-group">
+
+                            <span class="input-group-text bg-white border-end-0 text-muted">
+                                <i class="bi bi-envelope"></i>
+                            </span>
+
+                            <input asp-for="CreateMember.Email"
+                                   class="form-control border-start-0 ps-0"
+                                   placeholder="請輸入 Email" />
+
+                        </div>
+
+                        <div class="invalid-feedback"></div>
+
+                    </div>
+
+                </div>
+
+                <div class="row">
+
+                    <!-- 身分證 -->
+                    <div class="col-md-6 mb-3">
+
+                        <label asp-for="CreateMember.IdNumber" class="form-label fw-medium">
+                            身分證字號
+                        </label>
+
+                        <div class="input-group">
+
+                            <span class="input-group-text bg-white border-end-0 text-muted">
+                                <i class="bi bi-card-text"></i>
+                            </span>
+
+                            <input asp-for="CreateMember.IdNumber"
+                                   class="form-control border-start-0 ps-0"
+                                   placeholder="請輸入身分證字號" />
+
+                        </div>
+
+                    </div>
+
+                    <!-- 加入日期 -->
+                    <div class="col-md-6 mb-3">
+
+                        <label asp-for="CreateMember.JoinDate" class="form-label fw-medium">
+                            加入日期
+                            <span class="text-danger">*</span>
+                        </label>
+
+                        <div class="input-group">
+
+                            <span class="input-group-text bg-white border-end-0 text-muted">
+                                <i class="bi bi-calendar-event"></i>
+                            </span>
+
+                            <input asp-for="CreateMember.JoinDate"
+                                   type="date"
+                                   class="form-control border-start-0 ps-0" />
+
+                        </div>
+
+                        <div class="invalid-feedback"></div>
+
+                    </div>
+
+                </div>
+
+                <div class="row">
+
+                    <div class="col-md-12 mb-3">
+
+                        <label asp-for="CreateMember.ContinueDate"
+                               class="form-label fw-medium">
+
+                            續約日期
+                            <span class="text-danger">*</span>
+
+                        </label>
+
+                        <div class="input-group">
+
+                            <span class="input-group-text bg-white border-end-0 text-muted">
+                                <i class="bi bi-calendar-check"></i>
+                            </span>
+
+                            <input asp-for="CreateMember.ContinueDate"
+                                   type="date"
+                                   class="form-control border-start-0 ps-0" />
+
+                            <button type="button"
+                                    class="btn btn-primary"
+                                    onclick="renewCreateMember()">
+
+                                <i class="bi bi-arrow-clockwise"></i>
+                                已續約
+
+                            </button>
+
+                        </div>
+
+                        <div class="invalid-feedback"></div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+            <!-- Footer -->
+            <div class="modal-footer">
+
+                <button type="button"
+                        class="btn btn-outline-secondary"
+                        data-bs-dismiss="modal">
+
+                    <i class="bi bi-x-circle me-1"></i>
+                    取消
+
+                </button>
+
+                <button type="button"
+                        class="btn btn-success"
+                        onclick="createMember()">
+
+                    <i class="bi bi-person-plus-fill me-1"></i>
+                    新增會員
+
+                </button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+@* 編輯會員 modal *@
+<div class="modal fade"
+     id="editMemberModal"
+     tabindex="-1">
+
+    <div class="modal-dialog modal-lg">
+
+        <div class="modal-content">
+
+            <div class="modal-header">
+
+                <h5 class="modal-title">
+
+                    <i class="bi bi-pencil-square"></i>
+                    編輯會員
+
+                </h5>
+
+                <button type="button"
+                        class="btn-close"
+                        data-bs-dismiss="modal">
+                </button>
+
+            </div>
+
+            <div class="modal-body">
+
+                <form id="editMemberForm">
+
+                    <input asp-for="EditMember.Sid" type="hidden" />
+
+                    <div class="row">
+
+                        <div class="col-md-6 mb-3">
+
+                            <label asp-for="EditMember.Mid" class="form-label fw-medium">
+                                會員編號
+                            </label>
+
+                            <div class="input-group">
+
+                                <span class="input-group-text">
+                                    <i class="bi bi-person"></i>
+                                </span>
+
+                                <input asp-for="EditMember.Mid"
+                                       class="form-control"
+                                       readonly />
+
+                            </div>
+
+                            <div class="invalid-feedback"></div>
+
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+
+                            <label asp-for="EditMember.ParentMid"
+                                   class="form-label fw-medium">
+
+                                上線會員
+
+                            </label>
+
+                            <div class="input-group">
+
+                                <span class="input-group-text">
+                                    <i class="bi bi-diagram-3"></i>
+                                </span>
+
+                                <input asp-for="EditMember.ParentMid"
+                                       class="form-control"
+                                       readonly />
+
+                            </div>
+
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+
+                            <label asp-for="EditMember.Name"
+                                   class="form-label fw-medium">
+
+                                姓名
+
+                            </label>
+
+                            <div class="input-group">
+
+                                <span class="input-group-text">
+                                    <i class="bi bi-person-vcard"></i>
+                                </span>
+
+                                <input asp-for="EditMember.Name"
+                                       class="form-control" />
+
+                            </div>
+
+                            <div class="invalid-feedback"></div>
+
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+
+                            <label asp-for="EditMember.Mobile"
+                                   class="form-label fw-medium">
+
+                                手機
+
+                            </label>
+
+                            <div class="input-group">
+
+                                <span class="input-group-text">
+                                    <i class="bi bi-phone"></i>
+                                </span>
+
+                                <input asp-for="EditMember.Mobile"
+                                       class="form-control" />
+
+                            </div>
+
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+
+                            <label asp-for="EditMember.Email"
+                                   class="form-label fw-medium">
+
+                                Email
+
+                            </label>
+
+                            <div class="input-group">
+
+                                <span class="input-group-text">
+                                    <i class="bi bi-envelope"></i>
+                                </span>
+
+                                <input asp-for="EditMember.Email"
+                                       class="form-control" />
+
+                            </div>
+
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+
+                            <label asp-for="EditMember.IdNumber"
+                                   class="form-label fw-medium">
+
+                                身分證字號
+
+                            </label>
+
+                            <div class="input-group">
+
+                                <span class="input-group-text">
+                                    <i class="bi bi-card-text"></i>
+                                </span>
+
+                                <input asp-for="EditMember.IdNumber"
+                                       class="form-control" />
+
+                            </div>
+
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+
+                            <label asp-for="EditMember.JoinDate"
+                                   class="form-label fw-medium">
+
+                                加入日期
+
+                            </label>
+
+                            <div class="input-group">
+
+                                <span class="input-group-text">
+                                    <i class="bi bi-calendar-event"></i>
+                                </span>
+
+                                <input asp-for="EditMember.JoinDate"
+                                       type="date"
+                                       class="form-control" />
+
+                            </div>
+
+                            <div class="invalid-feedback"></div>
+
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+
+                            <label asp-for="EditMember.ContinueDate"
+                                   class="form-label fw-medium">
+
+                                續約日期
+
+                            </label>
+
+                            <div class="input-group">
+
+                                <span class="input-group-text">
+                                    <i class="bi bi-calendar-check"></i>
+                                </span>
+
+                                <input asp-for="EditMember.ContinueDate"
+                                       type="date"
+                                       class="form-control" />
+
+                                <button type="button"
+                                        class="btn btn-success"
+                                        onclick="renewEditMember()">
+
+                                    <i class="bi bi-check-circle-fill"></i>
+                                    已續約
+
+                                </button>
+
+                            </div>
+
+                            <div class="invalid-feedback"></div>
+
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+
+                            <label asp-for="EditMember.Role"
+                                   class="form-label fw-medium">
+
+                                會員角色
+
+                            </label>
+
+                            <select asp-for="EditMember.Role"
+                                    class="form-select">
+
+                                @foreach (var role in MemberRoles.RegisterRoles)
+                                {
+                                    <option value="@role">
+                                        @MemberRoles.GetName(role)
+                                    </option>
+                                }
+
+                            </select>
+
+                        </div>
+
+                    </div>
+
+                </form>
+
+            </div>
+
+            <div class="modal-footer">
+
+                <button class="btn btn-secondary"
+                        data-bs-dismiss="modal">
+
+                    取消
+
+                </button>
+
+                <button class="btn btn-primary"
+                        onclick="saveMember()">
+
+                    <i class="bi bi-save"></i>
+                    儲存修改
+
+                </button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+@* 檢視會員 modal *@
+<div class="modal fade" id="viewMemberModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-secondary text-white">
+                <h5 class="modal-title">
+                    <i class="bi bi-eye-fill"></i>
+                    檢視會員
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+
+            <div class="modal-body">
+                <form id="viewMemberForm">
+                    <div class="row">
+                        @* 欄位全數改為 readonly 或 disabled *@
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-medium">會員編號</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-person"></i></span>
+                                <input asp-for="ViewMember.Mid" class="form-control" readonly />
+                            </div>
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-medium">上線會員</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-diagram-3"></i></span>
+                                <input asp-for="ViewMember.ParentMid" class="form-control" readonly />
+                            </div>
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-medium">姓名</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-person-vcard"></i></span>
+                                <input asp-for="ViewMember.Name" class="form-control" readonly />
+                            </div>
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-medium">手機</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-phone"></i></span>
+                                <input asp-for="ViewMember.Mobile" class="form-control" readonly />
+                            </div>
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-medium">Email</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-envelope"></i></span>
+                                <input asp-for="ViewMember.Email" class="form-control" readonly />
+                            </div>
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-medium">身分證字號</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-card-text"></i></span>
+                                <input asp-for="ViewMember.IdNumber" class="form-control" readonly />
+                            </div>
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-medium">加入日期</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-calendar-event"></i></span>
+                                <input asp-for="ViewMember.JoinDate" type="date" class="form-control" readonly />
+                            </div>
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-medium">續約日期</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-calendar-check"></i></span>
+                                <input asp-for="ViewMember.ContinueDate" type="date" class="form-control" readonly />
+                            </div>
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-medium">會員角色</label>
+                            <input asp-for="ViewMember.Role" type="text" class="form-control" readonly />
+                        </div>
+                    </div>
+                </form>
+            </div>
+
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">關閉</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@* 刪除會員 modal *@
+<div class="modal fade"
+     id="deleteMemberModal"
+     tabindex="-1">
+
+    <div class="modal-dialog">
+
+        <div class="modal-content">
+
+            <div class="modal-header">
+
+                <h5 class="modal-title">
+                    刪除會員
+                </h5>
+
+            </div>
+
+            <div class="modal-body">
+
+                <input type="hidden"
+                       id="deleteSid" />
+
+                <div id="deleteMemberName"
+                     class="mb-3 fw-bold">
+                </div>
+
+                <div class="form-check">
+
+                    <input class="form-check-input"
+                           type="radio"
+                           name="deleteType"
+                           value="MOVE_PARENT"
+                           checked>
+
+                    <label class="form-check-label">
+                        移轉至上線會員
+                    </label>
+
+                </div>
+
+                <div class="form-check">
+
+                    <input class="form-check-input"
+                           type="radio"
+                           name="deleteType"
+                           value="DISABLE_ALL">
+
+                    <label class="form-check-label">
+                        全部停用
+                    </label>
+
+                </div>
+
+                <div class="form-check">
+
+                    <input class="form-check-input"
+                           type="radio"
+                           name="deleteType"
+                           value="MOVE_TARGET">
+
+                    <label class="form-check-label">
+                        指定其他會員接收
+                    </label>
+
+                </div>
+
+                <div class="mt-3">
+
+                    <input type="text"
+                           class="form-control"
+                           id="targetMid"
+                           placeholder="輸入接收會員 ID">
+
+                </div>
+
+            </div>
+
+            <div class="modal-footer">
+
+                <button class="btn btn-secondary"
+                        data-bs-dismiss="modal">
+                    取消
+                </button>
+
+                <button class="btn btn-danger"
+                        onclick="showDeleteConfirmModal()">
+                    確認刪除
+                </button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+<!-- 最終確認刪除 Modal -->
+<div class="modal fade"
+     id="deleteConfirmModal"
+     tabindex="-1">
+
+    <div class="modal-dialog modal-dialog-centered">
+
+        <div class="modal-content">
+
+            <div class="modal-header bg-danger text-white">
+
+                <h5 class="modal-title">
+
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+
+                    最終確認
+
+                </h5>
+
+                <button type="button"
+                        class="btn-close btn-close-white"
+                        data-bs-dismiss="modal">
+                </button>
+
+            </div>
+
+            <div class="modal-body text-center">
+
+                <i class="bi bi-trash-fill
+                          text-danger"
+                   style="font-size:60px;">
+                </i>
+
+                <h5 class="mt-3">
+                    確定刪除此會員？
+                </h5>
+
+                <div class="mt-2">
+
+                    <span id="confirmDeleteMemberName"
+                          class="fw-bold text-danger">
+                    </span>
+
+                </div>
+
+                <div class="mt-3 text-muted">
+
+                    此操作無法復原
+
+                </div>
+
+            </div>
+
+            <div class="modal-footer">
+
+                <button type="button"
+                        class="btn btn-secondary"
+                        data-bs-dismiss="modal">
+
+                    返回
+
+                </button>
+
+                <button type="button"
+                        class="btn btn-danger"
+                        onclick="deleteMemberConfirm()">
+
+                    <i class="bi bi-trash-fill me-1"></i>
+
+                    確定刪除
+
+                </button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+<!-- 會員續約 Modal -->
+<div class="modal fade"
+     id="renewMemberModal"
+     tabindex="-1">
+
+    <div class="modal-dialog modal-dialog-centered">
+
+        <div class="modal-content">
+
+            <div class="modal-header bg-success text-white">
+
+                <h5 class="modal-title">
+
+                    <i class="bi bi-arrow-clockwise me-2"></i>
+
+                    會員續約確認
+
+                </h5>
+
+                <button type="button"
+                        class="btn-close btn-close-white"
+                        data-bs-dismiss="modal">
+                </button>
+
+            </div>
+
+            <div class="modal-body">
+
+                <input type="hidden"
+                       id="renewSid" />
+
+                <div class="text-center">
+
+                    <i class="bi bi-check-circle-fill
+                              text-success"
+                       style="font-size:60px;">
+                    </i>
+
+                    <h5 class="mt-3">
+                        確定執行會員續約？
+                    </h5>
+
+                </div>
+
+                <div class="mt-4">
+
+                    <div class="row mb-2">
+
+                        <div class="col-4 fw-bold">
+                            會員編號
+                        </div>
+
+                        <div class="col-8"
+                             id="renewMid">
+                        </div>
+
+                    </div>
+
+                    <div class="row mb-2">
+
+                        <div class="col-4 fw-bold">
+                            下次續約日期
+                        </div>
+
+                        <div class="col-8"
+                             id="renewDatePreview">
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+            <div class="modal-footer">
+
+                <button type="button"
+                        class="btn btn-secondary"
+                        data-bs-dismiss="modal">
+
+                    取消
+
+                </button>
+
+                <button type="button"
+                        class="btn btn-success"
+                        onclick="renewMemberConfirm()">
+
+                    <i class="bi bi-arrow-clockwise me-1"></i>
+
+                    確認續約
+
+                </button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+<!-- 匯出會員 -->
+<div class="modal fade"
+     id="exportModal"
+     tabindex="-1">
+
+    <div class="modal-dialog">
+
+        <div class="modal-content">
+
+            <div class="modal-header bg-info text-white">
+
+                <h5 class="modal-title">
+
+                    <i class="bi bi-download"></i>
+                    匯出會員資料
+
+                </h5>
+
+                <button type="button"
+                        class="btn-close btn-close-white"
+                        data-bs-dismiss="modal">
+                </button>
+
+            </div>
+
+            <div class="modal-body">
+
+                <div class="mb-3">
+
+                    <label class="form-label">
+                        匯出格式
+                    </label>
+
+                    <select id="exportType"
+                            class="form-select">
+
+                        <option value="csv">
+                            CSV
+                        </option>
+
+                        <option value="xlsx">
+                            Excel
+                        </option>
+
+                    </select>
+
+                </div>
+
+                <div class="mb-3">
+
+                    <label class="form-label">
+                        匯出範圍
+                    </label>
+
+                    <select id="exportScope"
+                            class="form-select">
+
+                        <option value="current">
+                            目前查詢結果
+                        </option>
+
+                        <option value="all">
+                            全部會員
+                        </option>
+
+                    </select>
+
+                </div>
+
+            </div>
+
+            <div class="modal-footer">
+
+                <button class="btn btn-secondary"
+                        data-bs-dismiss="modal">
+
+                    取消
+
+                </button>
+
+                <button class="btn btn-info text-white"
+                        onclick="exportMembers()">
+
+                    開始匯出
+
+                </button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+<!-- 匯入會員 -->
+<div class="modal fade"
+     id="importModal"
+     tabindex="-1">
+
+    <div class="modal-dialog">
+
+        <div class="modal-content">
+
+            <div class="modal-header bg-success text-white">
+
+                <h5 class="modal-title">
+
+                    <i class="bi bi-upload"></i>
+                    匯入會員資料
+
+                </h5>
+
+                <button type="button"
+                        class="btn-close btn-close-white"
+                        data-bs-dismiss="modal">
+                </button>
+
+            </div>
+
+            <div class="modal-body">
+
+                <div class="mb-3">
+
+                    <label class="form-label">
+                        檔案格式
+                    </label>
+
+                    <div class="form-text mb-2">
+
+                        支援：
+                        CSV、Excel(.xlsx)
+
+                    </div>
+
+                    <input type="file"
+                           id="importFile"
+                           class="form-control"
+                           accept=".csv,.xlsx" />
+
+                </div>
+
+                <div class="alert alert-info">
+
+                    欄位順序：
+
+                    <hr />
+
+                    MID、姓名、角色、手機、Email、
+                    身分證、加入日期、續約日期、
+                    上線
+
+                </div>
+
+                <!-- 匯入進度條 -->
+                <div id="importProgressArea"
+                     style="display:none;">
+
+                    <div class="mb-2">
+
+                        <span id="importProgressText">
+                            0 / 0
+                        </span>
+
+                    </div>
+
+                    <div class="progress">
+
+                        <div id="importProgressBar"
+                             class="progress-bar
+                                    progress-bar-striped
+                                    progress-bar-animated
+                                    bg-success"
+                             style="width:0%">
+                            0%
+                        </div>
+
+                    </div>
+
+                </div>
+
+                <!-- 匯入結果 -->
+                <div id="importResultArea"
+                     class="mt-3"
+                     style="display:none;">
+
+                    <div id="importResult"
+                         class="alert alert-success mb-0">
+                    </div>
+
+                </div>
+
+            </div>
+
+            <div class="modal-footer">
+
+                <button id="btnImportCancel"
+                        class="btn btn-secondary"
+                        data-bs-dismiss="modal"
+                        onclick="location.reload();">
+
+                    取消
+
+                </button>
+
+                <button id="btnImportSubmit"
+                        class="btn btn-success"
+                        onclick="importMembers()">
+
+                    開始匯入
+
+                </button>
+
+            </div>
+        </div>
+
+    </div>
+
+</div>
+
+
+<!-- 系統訊息 Modal -->
+<div class="modal fade"
+     id="messageModal"
+     tabindex="-1">
+
+    <div class="modal-dialog modal-dialog-centered">
+
+        <div class="modal-content">
+
+            <div class="modal-header">
+
+                <h5 class="modal-title"
+                    id="messageTitle">
+
+                    系統訊息
+
+                </h5>
+
+                <button type="button"
+                        class="btn-close"
+                        data-bs-dismiss="modal">
+                </button>
+
+            </div>
+
+            <div class="modal-body text-center">
+
+                <div id="messageIcon"
+                     class="mb-3">
+                </div>
+
+                <div id="messageText"></div>
+
+            </div>
+
+            <div class="modal-footer">
+                <button type="button"
+                        class="btn btn-primary"
+                        onclick="closeMessageModal()">
+
+                    確定
+
+                </button>
+            </div>
+
+        </div>
+
+    </div>
+
+</div>

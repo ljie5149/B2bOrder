@@ -1,0 +1,426 @@
+@using B2bOrder.Models.Common
+@model B2bOrder.Models.Tree.MemberTreePageViewModel
+
+@{
+    ViewData["Title"] = "組織圖";
+}
+
+<div class="container-fluid">
+
+    <div class="card shadow-sm border-0">
+
+        <div class="card-header bg-primary text-white">
+
+            <div class="d-flex justify-content-between align-items-center">
+
+                <h4 class="mb-0">
+                    <i class="bi bi-diagram-3 me-2"></i>
+                    @ViewData["Title"]
+                </h4>
+                <div class="d-flex align-items-center gap-2">
+
+                    <input type="text"
+                           id="memberSearch"
+                           class="form-control form-control-sm"
+                           style="width:250px"
+                           placeholder="搜尋會員編號或姓名">
+
+                    <button type="button"
+                            class="btn btn-light btn-sm"
+                            onclick="searchMember()">
+
+                        <i class="bi bi-search"></i>
+
+                    </button>
+
+                </div>
+                <div class="zoom-toolbar d-flex align-items-center gap-2">
+
+                    <button type="button"
+                            class="btn btn-outline-light btn-sm"
+                            onclick="expandAllNodes()"
+                            title="全部展開">
+                        <i class="bi bi-text-paragraph me-1"></i>全部展開
+                    </button>
+
+                    <button type="button"
+                            class="btn btn-outline-light btn-sm"
+                            onclick="collapseAllNodes()"
+                            title="全部收合">
+                        <i class="bi bi-text-center me-1"></i>全部收合
+                    </button>
+
+                    <button type="button"
+                            class="btn btn-outline-light btn-sm"
+                            onclick="zoomOut()">
+                        <i class="bi bi-zoom-out"></i>
+                    </button>
+
+                    <span id="zoomIndicator"
+                          class="badge bg-light text-primary">
+                        100%
+                    </span>
+                    <button type="button"
+                            class="btn btn-outline-light btn-sm"
+                            onclick="resetZoom()" hidden>
+                        100%
+                    </button>
+
+                    <button type="button"
+                            class="btn btn-outline-light btn-sm"
+                            onclick="zoomIn()">
+                        <i class="bi bi-zoom-in"></i>
+                    </button>
+
+                </div>
+
+            </div>
+
+        </div>
+
+        <div class="card-body p-4">
+            <div class="organization-container">
+
+                <div class="org-tree-root">
+
+                    @await Html.PartialAsync("_TreeNode", Model.Tree)
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+<partial name="_MemberModals"
+         model="(MemberModalViewModel)ViewBag.ModalModel" />
+
+@section Scripts
+{
+    <script src="~/js/member.js"></script>
+    <script>
+        // Ctrl＋滑鼠滾輪縮放
+        let currentScale = 1;
+            // 加入平移
+            let isDragging = false;
+            let startX;
+            let startY;
+            let scrollLeft;
+            let scrollTop;
+
+        document.addEventListener(
+            "DOMContentLoaded",
+            function ()
+            {
+                const container =
+                    document.querySelector(
+                        ".organization-container"
+                    );
+
+                const tree =
+                    document.querySelector(
+                        ".org-tree-root"
+                    );
+
+                // Ctrl＋滑鼠滾輪縮放
+                container.addEventListener(
+                    "wheel",
+                    function (e)
+                    {
+                        if (!e.ctrlKey)
+                            return;
+
+                        e.preventDefault();
+
+                        const rect =
+                            container.getBoundingClientRect();
+
+                        const mouseX =
+                            e.clientX - rect.left;
+
+                        const mouseY =
+                            e.clientY - rect.top;
+
+                        const oldScale =
+                            currentScale;
+
+                        if (e.deltaY < 0)
+                        {
+                            currentScale *= 1.1;
+                        }
+                        else
+                        {
+                            currentScale /= 1.1;
+                        }
+
+                        currentScale =
+                            Math.max(
+                                0.2,
+                                Math.min(
+                                    3,
+                                    currentScale
+                                )
+                            );
+
+                        document.getElementById(
+                            "zoomIndicator"
+                        ).innerText =
+                            Math.round(
+                                currentScale * 100
+                            ) + "%";
+
+                        const scaleRatio =
+                            currentScale /
+                            oldScale;
+
+                        tree.style.transform =
+                            `scale(${currentScale})`;
+
+                        container.scrollLeft =
+                            (container.scrollLeft + mouseX)
+                            * scaleRatio
+                            - mouseX;
+
+                        container.scrollTop =
+                            (container.scrollTop + mouseY)
+                            * scaleRatio
+                            - mouseY;
+                    },
+                    {
+                        passive: false
+                    }
+                );
+
+                // 加入平移
+                container.addEventListener(
+                    "mousedown",
+                    e =>
+                    {
+                        isDragging = true;
+
+                        startX =
+                            e.pageX -
+                            container.offsetLeft;
+
+                        startY =
+                            e.pageY -
+                            container.offsetTop;
+
+                        scrollLeft =
+                            container.scrollLeft;
+
+                        scrollTop =
+                            container.scrollTop;
+                    });
+
+                container.addEventListener(
+                    "mouseleave",
+                    () =>
+                    {
+                        isDragging = false;
+                    });
+
+                container.addEventListener(
+                    "mouseup",
+                    () =>
+                    {
+                        isDragging = false;
+                    });
+
+                container.addEventListener(
+                    "mousemove",
+                    e =>
+                    {
+                        if (!isDragging)
+                            return;
+
+                        e.preventDefault();
+
+                        const x =
+                            e.pageX -
+                            container.offsetLeft;
+
+                        const y =
+                            e.pageY -
+                            container.offsetTop;
+
+                        const walkX =
+                            (x - startX) * 2;
+
+                        const walkY =
+                            (y - startY) * 2;
+
+                        container.scrollLeft =
+                            scrollLeft - walkX;
+
+                        container.scrollTop =
+                            scrollTop - walkY;
+                    });
+            });
+
+            // 加入縮放鈕
+            function zoomIn()
+            {
+                currentScale =
+                    Math.min(
+                        currentScale + 0.1,
+                        3
+                    );
+
+                updateZoom();
+            }
+
+            function zoomOut()
+            {
+                currentScale =
+                    Math.max(
+                        currentScale - 0.1,
+                        0.3
+                    );
+
+                updateZoom();
+            }
+
+            function resetZoom()
+            {
+                currentScale = 1;
+
+                updateZoom();
+            }
+
+            function updateZoom()
+            {
+                document.getElementById(
+                        "zoomIndicator"
+                    ).innerText =
+                        Math.round(
+                            currentScale * 100
+                        ) + "%";
+
+                document.querySelector(
+                    ".org-tree-root"
+                ).style.transform =
+                    `scale(${currentScale})`;
+            }
+
+            // 新增功能：全部展開
+            function expandAllNodes() {
+                const wrappers = document.querySelectorAll(".node-wrapper");
+                wrappers.forEach(wrapper => {
+                    wrapper.classList.remove("is-collapsed");
+                    // 同步更新按鈕文字為減號
+                    const btn = wrapper.querySelector(":scope > .member-node .btn-collapse");
+                    if (btn) btn.innerHTML = "－";
+                });
+            }
+
+            // 新增功能：全部收合 (保留根節點不收合，避免畫面全空)
+            function collapseAllNodes() {
+                const wrappers = document.querySelectorAll(".node-wrapper");
+                wrappers.forEach(wrapper => {
+                    // 檢查是否含有子容器，且不是最頂層的根節點外殼
+                    const hasChildren = wrapper.querySelector(":scope > .children-container");
+                    const isRootTree = wrapper.parentElement.classList.contains("org-tree-root");
+
+                    if (hasChildren && !isRootTree) {
+                        wrapper.classList.add("is-collapsed");
+                        // 同步更新按鈕文字為加號
+                        const btn = wrapper.querySelector(":scope > .member-node .btn-collapse");
+                        if (btn) btn.innerHTML = "＋";
+                    }
+                });
+            }
+
+        // 搜尋功能
+        function searchMember()
+        {
+            const keyword =
+                document.getElementById(
+                    "memberSearch"
+                ).value
+                .trim()
+                .toLowerCase();
+
+            if (!keyword)
+                return;
+
+            const nodes =
+                document.querySelectorAll(
+                    ".member-node"
+                );
+
+            let target = null;
+
+            nodes.forEach(node =>
+            {
+                const mid =
+                    node.dataset.mid
+                        ?.toLowerCase() || "";
+
+                const name =
+                    node.dataset.name
+                        ?.toLowerCase() || "";
+
+                if (
+                    mid.includes(keyword) ||
+                    name.includes(keyword)
+                )
+                {
+                    target = node;
+                }
+            });
+
+            if (!target)
+            {
+                showMessage(
+                    "查無資料",
+                    "找不到符合條件的會員"
+                );
+                return;
+            }
+
+            focusNode(target);
+        }
+        // 移動到節點
+        function focusNode(node)
+        {
+            node.scrollIntoView(
+            {
+                behavior: "smooth",
+                block: "center",
+                inline: "center"
+            });
+
+            node.classList.add(
+                "search-highlight"
+            );
+
+            setTimeout(
+                () =>
+                {
+                    node.classList.remove(
+                        "search-highlight"
+                    );
+                },
+                3000
+            );
+        }
+        document.getElementById(
+            "memberSearch"
+        ).addEventListener(
+            "keydown",
+            function(e)
+            {
+                if (e.key === "Enter")
+                {
+                    searchMember();
+                }
+            }
+        );
+    </script>
+}
+
+<link rel="stylesheet" href="~/css/organization.css" />

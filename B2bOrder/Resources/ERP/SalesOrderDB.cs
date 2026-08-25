@@ -1,0 +1,811 @@
+namespace B2bOrder.Resources.eCommerce
+{
+    /// <summary>
+    /// SalesOrderDB V2 Shared Core Schema
+    /// 設計目標：
+    /// 1. 同時支援 Shopping Platform、B2B Sales 與 Construction ERP
+    /// 2. 統一管理報價、銷售單、明細、交期、價格快照、稅額、地址與狀態
+    /// 3. 購物平台前台購物車不放在本資料庫；購物車確認後轉成 Sales Order
+    /// 4. Item 與變體由 PIM/MIMDB 提供；價格由 PricingDB 提供；Party 由 PartyDB 提供
+    /// 5. 庫存預留與出庫由 InventoryDB/FulfillmentDB 處理；應收由 AccountingDB 處理
+    /// 6. 建築工程承攬、專案供料與業主合約可透過 project_sid、contract_sid、wbs_sid 擴充
+    /// 7. nid：資料庫內部主鍵；sid：跨服務/API 對外識別碼
+    /// 8. avalible：Y可用；W停用；D刪除
+    /// 9. 適用 MySQL 8.x / InnoDB / utf8mb4
+    /// </summary>
+    internal static class SalesOrderDB
+    {
+        public static readonly string CreateTables = @"
+SET NAMES utf8mb4;
+SET FOREIGN_KEY_CHECKS = 0;
+
+-- =========================================================
+-- 01. 銷售類型與政策
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS sal_order_type (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '銷售類型序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    modify_date             DATETIME                                NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP COMMENT '修改日期',
+    order_type_code         VARCHAR(100)                        NOT NULL COMMENT '銷售類型代碼',
+    order_type_name         VARCHAR(200)                        NOT NULL COMMENT '銷售類型名稱',
+    order_category          VARCHAR(30)                         NOT NULL COMMENT 'RETAIL零售;B2B企業;PROJECT專案;CONTRACT合約;SERVICE服務;INTERNAL內部;RETURN退貨',
+    inventory_effect        TINYINT(1)                          NOT NULL DEFAULT 1 COMMENT '是否影響庫存',
+    approval_required       TINYINT(1)                          NOT NULL DEFAULT 0 COMMENT '是否需要簽核',
+    credit_check_required   TINYINT(1)                          NOT NULL DEFAULT 0 COMMENT '是否需信用檢查',
+    contract_required       TINYINT(1)                          NOT NULL DEFAULT 0 COMMENT '是否需合約',
+    fulfillment_required    TINYINT(1)                          NOT NULL DEFAULT 1 COMMENT '是否需履約',
+    invoice_required        TINYINT(1)                          NOT NULL DEFAULT 1 COMMENT '是否需發票',
+    order_type_status       VARCHAR(20)                         NOT NULL DEFAULT 'ACTIVE' COMMENT 'ACTIVE啟用;INACTIVE停用',
+    avalible                VARCHAR(2)                          NOT NULL DEFAULT 'Y' COMMENT 'Y可用;D刪除;W停用',
+    remark                  TEXT                                    NULL COMMENT '備註',
+    CONSTRAINT uk_sot_order_type_code UNIQUE (order_type_code),
+    INDEX idx_sot_category (order_category),
+    INDEX idx_sot_approval_required (approval_required),
+    INDEX idx_sot_credit_check_required (credit_check_required),
+    INDEX idx_sot_status (order_type_status),
+    INDEX idx_sot_avalible (avalible)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='銷售單類型';
+
+CREATE TABLE IF NOT EXISTS sal_policy (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '銷售政策序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    modify_date             DATETIME                                NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP COMMENT '修改日期',
+    policy_code             VARCHAR(100)                        NOT NULL COMMENT '政策代碼',
+    policy_name             VARCHAR(200)                        NOT NULL COMMENT '政策名稱',
+    company_sid             VARCHAR(32)                             NULL COMMENT 'MasterDB公司序號',
+    order_type_sid          VARCHAR(32)                             NULL COMMENT '銷售類型序號',
+    allow_partial_delivery  TINYINT(1)                          NOT NULL DEFAULT 1 COMMENT '是否允許分批交貨',
+    allow_backorder         TINYINT(1)                          NOT NULL DEFAULT 1 COMMENT '是否允許缺貨待補',
+    allow_over_delivery     TINYINT(1)                          NOT NULL DEFAULT 0 COMMENT '是否允許超交',
+    over_delivery_rate      DECIMAL(8,4)                        NOT NULL DEFAULT 0 COMMENT '允許超交率',
+    cancellation_allowed    TINYINT(1)                          NOT NULL DEFAULT 1 COMMENT '是否允許取消',
+    cancellation_cutoff_min INT                                 NOT NULL DEFAULT 0 COMMENT '取消截止分鐘',
+    price_lock_minutes      INT                                 NOT NULL DEFAULT 30 COMMENT '價格鎖定分鐘',
+    stock_lock_minutes      INT                                 NOT NULL DEFAULT 30 COMMENT '庫存鎖定分鐘',
+    credit_hold_enabled     TINYINT(1)                          NOT NULL DEFAULT 0 COMMENT '是否啟用信用凍結',
+    policy_status           VARCHAR(20)                         NOT NULL DEFAULT 'ACTIVE' COMMENT 'ACTIVE啟用;INACTIVE停用',
+    avalible                VARCHAR(2)                          NOT NULL DEFAULT 'Y' COMMENT 'Y可用;D刪除;W停用',
+    remark                  TEXT                                    NULL COMMENT '備註',
+    CONSTRAINT uk_sp_policy_code UNIQUE (policy_code),
+    INDEX idx_sp_company_sid (company_sid),
+    INDEX idx_sp_order_type_sid (order_type_sid),
+    INDEX idx_sp_status (policy_status),
+    INDEX idx_sp_avalible (avalible),
+    CHECK (over_delivery_rate >= 0),
+    CHECK (cancellation_cutoff_min >= 0),
+    CHECK (price_lock_minutes >= 0),
+    CHECK (stock_lock_minutes >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='銷售政策';
+
+-- =========================================================
+-- 02. 報價
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS sal_quote (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '報價單序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    modify_date             DATETIME                                NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP COMMENT '修改日期',
+    quote_no                VARCHAR(100)                        NOT NULL COMMENT '報價單號',
+    company_sid             VARCHAR(32)                         NOT NULL COMMENT '公司序號',
+    business_unit_sid       VARCHAR(32)                             NULL COMMENT '營運單位序號',
+    department_sid          VARCHAR(32)                             NULL COMMENT '部門序號',
+    order_type_sid          VARCHAR(32)                         NOT NULL COMMENT '銷售類型序號',
+    customer_party_sid      VARCHAR(32)                         NOT NULL COMMENT 'PartyDB客戶序號',
+    contact_party_sid       VARCHAR(32)                             NULL COMMENT '聯絡人Party序號',
+    project_sid             VARCHAR(32)                             NULL COMMENT '專案序號',
+    site_sid                VARCHAR(32)                             NULL COMMENT '工地序號',
+    contract_sid            VARCHAR(32)                             NULL COMMENT '合約序號',
+    opportunity_sid         VARCHAR(32)                             NULL COMMENT 'CRMDB商機序號',
+    sales_owner_user_sid    VARCHAR(32)                             NULL COMMENT '負責業務帳號序號',
+    quote_date              DATE                                NOT NULL COMMENT '報價日期',
+    valid_until             DATE                                    NULL COMMENT '有效期限',
+    currency_sid            VARCHAR(32)                         NOT NULL COMMENT '幣別序號',
+    exchange_rate           DECIMAL(20,10)                      NOT NULL DEFAULT 1 COMMENT '匯率',
+    price_list_sid          VARCHAR(32)                             NULL COMMENT 'PricingDB價格清單序號',
+    agreement_sid           VARCHAR(32)                             NULL COMMENT 'PricingDB價格協議序號',
+    subtotal_amount         DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '未稅小計',
+    discount_amount         DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '折扣金額',
+    tax_amount              DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '稅額',
+    freight_amount          DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '運費',
+    other_amount            DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '其他費用',
+    total_amount            DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '報價總額',
+    payment_term_sid        VARCHAR(32)                             NULL COMMENT '付款條件序號',
+    delivery_term_code      VARCHAR(50)                             NULL COMMENT '交貨條件',
+    quote_status            VARCHAR(30)                         NOT NULL DEFAULT 'DRAFT' COMMENT 'DRAFT草稿;SUBMITTED已送出;REVIEW待審;APPROVED核准;SENT已送客戶;ACCEPTED接受;REJECTED拒絕;EXPIRED過期;CONVERTED已轉單;CANCELLED取消',
+    workflow_instance_sid   VARCHAR(32)                             NULL COMMENT 'WorkflowDB流程實例序號',
+    approved_user_sid       VARCHAR(32)                             NULL COMMENT '核准人員序號',
+    approved_date           DATETIME                                NULL COMMENT '核准時間',
+    accepted_date           DATETIME                                NULL COMMENT '客戶接受時間',
+    version_no              BIGINT UNSIGNED                     NOT NULL DEFAULT 0 COMMENT '樂觀鎖版本',
+    avalible                VARCHAR(2)                          NOT NULL DEFAULT 'Y' COMMENT 'Y可用;D刪除;W停用',
+    remark                  TEXT                                    NULL COMMENT '備註',
+    CONSTRAINT uk_sq_quote_no UNIQUE (quote_no),
+    INDEX idx_sq_company_sid (company_sid),
+    INDEX idx_sq_order_type_sid (order_type_sid),
+    INDEX idx_sq_customer_party_sid (customer_party_sid),
+    INDEX idx_sq_project_sid (project_sid),
+    INDEX idx_sq_contract_sid (contract_sid),
+    INDEX idx_sq_opportunity_sid (opportunity_sid),
+    INDEX idx_sq_sales_owner_user_sid (sales_owner_user_sid),
+    INDEX idx_sq_quote_date (quote_date),
+    INDEX idx_sq_valid_until (valid_until),
+    INDEX idx_sq_status (quote_status),
+    INDEX idx_sq_workflow_instance_sid (workflow_instance_sid),
+    INDEX idx_sq_avalible (avalible),
+    CHECK (exchange_rate > 0),
+    CHECK (subtotal_amount >= 0),
+    CHECK (discount_amount >= 0),
+    CHECK (tax_amount >= 0),
+    CHECK (freight_amount >= 0),
+    CHECK (other_amount >= 0),
+    CHECK (total_amount >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='銷售報價單';
+
+CREATE TABLE IF NOT EXISTS sal_quote_item (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '報價明細序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    modify_date             DATETIME                                NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP COMMENT '修改日期',
+    quote_nid               BIGINT UNSIGNED                     NOT NULL COMMENT '報價單流水號',
+    line_no                 INT                                 NOT NULL COMMENT '明細行號',
+    item_sid                VARCHAR(32)                             NULL COMMENT 'PIM/MIMDB Item序號',
+    variant_sid             VARCHAR(32)                             NULL COMMENT 'PIM/MIMDB變體序號',
+    item_description        VARCHAR(1000)                       NOT NULL COMMENT '品名或服務說明',
+    specification_text      TEXT                                    NULL COMMENT '規格說明',
+    quantity                DECIMAL(20,6)                       NOT NULL COMMENT '數量',
+    unit_sid                VARCHAR(32)                         NOT NULL COMMENT '單位序號',
+    list_price              DECIMAL(20,6)                       NOT NULL DEFAULT 0 COMMENT '牌價',
+    unit_price              DECIMAL(20,6)                       NOT NULL COMMENT '報價單價',
+    discount_rate           DECIMAL(8,4)                        NOT NULL DEFAULT 0 COMMENT '折扣率',
+    discount_amount         DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '折扣金額',
+    tax_sid                 VARCHAR(32)                             NULL COMMENT '稅別序號',
+    tax_amount              DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '稅額',
+    line_amount             DECIMAL(20,4)                       NOT NULL COMMENT '明細總額',
+    requested_delivery_date DATE                                    NULL COMMENT '客戶需求交期',
+    project_sid             VARCHAR(32)                             NULL COMMENT '專案序號',
+    site_sid                VARCHAR(32)                             NULL COMMENT '工地序號',
+    wbs_sid                 VARCHAR(32)                             NULL COMMENT 'WBS序號',
+    contract_item_sid       VARCHAR(32)                             NULL COMMENT '合約明細序號',
+    pricing_result_sid      VARCHAR(32)                             NULL COMMENT 'PricingDB計價結果序號',
+    price_snapshot          JSON                                    NULL COMMENT '價格計算快照',
+    item_status             VARCHAR(20)                         NOT NULL DEFAULT 'OPEN' COMMENT 'OPEN有效;CANCELLED取消;CONVERTED已轉單',
+    remark                  TEXT                                    NULL COMMENT '備註',
+    CONSTRAINT fk_sqi_quote
+        FOREIGN KEY (quote_nid) REFERENCES sal_quote(nid),
+    CONSTRAINT uk_sqi_quote_line UNIQUE (quote_nid, line_no),
+    INDEX idx_sqi_quote_nid (quote_nid),
+    INDEX idx_sqi_item_sid (item_sid),
+    INDEX idx_sqi_variant_sid (variant_sid),
+    INDEX idx_sqi_project_sid (project_sid),
+    INDEX idx_sqi_wbs_sid (wbs_sid),
+    INDEX idx_sqi_contract_item_sid (contract_item_sid),
+    INDEX idx_sqi_pricing_result_sid (pricing_result_sid),
+    INDEX idx_sqi_status (item_status),
+    CHECK (line_no > 0),
+    CHECK (quantity > 0),
+    CHECK (list_price >= 0),
+    CHECK (unit_price >= 0),
+    CHECK (discount_rate >= 0),
+    CHECK (discount_amount >= 0),
+    CHECK (tax_amount >= 0),
+    CHECK (line_amount >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='銷售報價明細';
+
+-- =========================================================
+-- 03. 銷售單
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS sal_order (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '銷售單序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    modify_date             DATETIME                                NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP COMMENT '修改日期',
+    sales_order_no          VARCHAR(100)                        NOT NULL COMMENT '銷售單號',
+    external_order_no       VARCHAR(150)                            NULL COMMENT '外部訂單號',
+    company_sid             VARCHAR(32)                         NOT NULL COMMENT '公司序號',
+    business_unit_sid       VARCHAR(32)                             NULL COMMENT '營運單位序號',
+    department_sid          VARCHAR(32)                             NULL COMMENT '部門序號',
+    order_type_sid          VARCHAR(32)                         NOT NULL COMMENT '銷售類型序號',
+    customer_party_sid      VARCHAR(32)                         NOT NULL COMMENT '客戶Party序號',
+    member_party_sid        VARCHAR(32)                             NULL COMMENT '會員Party序號',
+    contact_party_sid       VARCHAR(32)                             NULL COMMENT '聯絡人Party序號',
+    quote_sid               VARCHAR(32)                             NULL COMMENT '來源報價單序號',
+    channel_sid             VARCHAR(32)                             NULL COMMENT '通路序號',
+    store_sid               VARCHAR(32)                             NULL COMMENT '商店序號',
+    project_sid             VARCHAR(32)                             NULL COMMENT '專案序號',
+    site_sid                VARCHAR(32)                             NULL COMMENT '工地序號',
+    contract_sid            VARCHAR(32)                             NULL COMMENT '合約序號',
+    sales_owner_user_sid    VARCHAR(32)                             NULL COMMENT '負責業務帳號序號',
+    order_date              DATETIME                            NOT NULL COMMENT '下單時間',
+    requested_delivery_date DATE                                    NULL COMMENT '客戶需求交期',
+    currency_sid            VARCHAR(32)                         NOT NULL COMMENT '幣別序號',
+    exchange_rate           DECIMAL(20,10)                      NOT NULL DEFAULT 1 COMMENT '匯率',
+    price_list_sid          VARCHAR(32)                             NULL COMMENT '價格清單序號',
+    price_level_sid         VARCHAR(32)                             NULL COMMENT '價格層級序號',
+    agreement_sid           VARCHAR(32)                             NULL COMMENT '價格協議序號',
+    subtotal_amount         DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '未稅小計',
+    discount_amount         DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '折扣金額',
+    promotion_amount        DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '活動優惠金額',
+    tax_amount              DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '稅額',
+    freight_amount          DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '運費',
+    service_amount          DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '服務費',
+    other_amount            DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '其他費用',
+    total_amount            DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '訂單總額',
+    paid_amount             DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '已付款金額',
+    refunded_amount         DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '已退款金額',
+    payment_term_sid        VARCHAR(32)                             NULL COMMENT '付款條件序號',
+    payment_method_sid      VARCHAR(32)                             NULL COMMENT '付款方式序號',
+    billing_address_sid     VARCHAR(32)                             NULL COMMENT '帳單地址序號',
+    shipping_address_sid    VARCHAR(32)                             NULL COMMENT '配送地址序號',
+    invoice_title           VARCHAR(300)                            NULL COMMENT '發票抬頭',
+    invoice_tax_no          VARCHAR(50)                             NULL COMMENT '發票統編',
+    source_type             VARCHAR(30)                         NOT NULL DEFAULT 'SHOPPING' COMMENT 'SHOPPING商城;B2B;QUOTE報價;CRM商機;PROJECT專案;CONTRACT合約;API;MANUAL人工',
+    source_sid              VARCHAR(32)                             NULL COMMENT '來源資料序號',
+    credit_check_status     VARCHAR(20)                         NOT NULL DEFAULT 'NOT_REQUIRED' COMMENT 'NOT_REQUIRED不需要;PENDING待檢;PASS通過;HOLD凍結;FAIL失敗',
+    payment_status          VARCHAR(20)                         NOT NULL DEFAULT 'UNPAID' COMMENT 'UNPAID未付;PARTIAL部分付款;PAID已付;REFUNDING退款中;PARTIAL_REFUNDED部分退款;REFUNDED已退款',
+    fulfillment_status      VARCHAR(20)                         NOT NULL DEFAULT 'UNFULFILLED' COMMENT 'UNFULFILLED未履約;RESERVED已預留;PARTIAL部分履約;FULFILLED已完成;CANCELLED取消',
+    invoice_status          VARCHAR(20)                         NOT NULL DEFAULT 'NOT_ISSUED' COMMENT 'NOT_ISSUED未開;PARTIAL部分開立;ISSUED已開;VOID作廢;ALLOWANCE折讓',
+    order_status            VARCHAR(30)                         NOT NULL DEFAULT 'DRAFT' COMMENT 'DRAFT草稿;PENDING_PAYMENT待付款;SUBMITTED已送出;REVIEW待審;APPROVED核准;CONFIRMED已確認;PROCESSING處理中;PARTIAL_FULFILLED部分履約;COMPLETED完成;ON_HOLD暫停;CANCELLED取消;CLOSED結案',
+    workflow_instance_sid   VARCHAR(32)                             NULL COMMENT 'WorkflowDB流程實例序號',
+    approved_user_sid       VARCHAR(32)                             NULL COMMENT '核准人員序號',
+    approved_date           DATETIME                                NULL COMMENT '核准時間',
+    confirmed_date          DATETIME                                NULL COMMENT '確認時間',
+    completed_date          DATETIME                                NULL COMMENT '完成時間',
+    cancel_reason_code      VARCHAR(50)                             NULL COMMENT '取消原因代碼',
+    cancel_reason           TEXT                                    NULL COMMENT '取消原因',
+    version_no              BIGINT UNSIGNED                     NOT NULL DEFAULT 0 COMMENT '樂觀鎖版本',
+    avalible                VARCHAR(2)                          NOT NULL DEFAULT 'Y' COMMENT 'Y可用;D刪除;W停用',
+    remark                  TEXT                                    NULL COMMENT '備註',
+    CONSTRAINT uk_so_sales_order_no UNIQUE (sales_order_no),
+    INDEX idx_so_external_order_no (external_order_no),
+    INDEX idx_so_company_sid (company_sid),
+    INDEX idx_so_order_type_sid (order_type_sid),
+    INDEX idx_so_customer_party_sid (customer_party_sid),
+    INDEX idx_so_member_party_sid (member_party_sid),
+    INDEX idx_so_quote_sid (quote_sid),
+    INDEX idx_so_channel_sid (channel_sid),
+    INDEX idx_so_store_sid (store_sid),
+    INDEX idx_so_project_sid (project_sid),
+    INDEX idx_so_site_sid (site_sid),
+    INDEX idx_so_contract_sid (contract_sid),
+    INDEX idx_so_order_date (order_date),
+    INDEX idx_so_requested_delivery_date (requested_delivery_date),
+    INDEX idx_so_payment_status (payment_status),
+    INDEX idx_so_fulfillment_status (fulfillment_status),
+    INDEX idx_so_invoice_status (invoice_status),
+    INDEX idx_so_order_status (order_status),
+    INDEX idx_so_workflow_instance_sid (workflow_instance_sid),
+    INDEX idx_so_avalible (avalible),
+    CHECK (exchange_rate > 0),
+    CHECK (subtotal_amount >= 0),
+    CHECK (discount_amount >= 0),
+    CHECK (promotion_amount >= 0),
+    CHECK (tax_amount >= 0),
+    CHECK (freight_amount >= 0),
+    CHECK (service_amount >= 0),
+    CHECK (other_amount >= 0),
+    CHECK (total_amount >= 0),
+    CHECK (paid_amount >= 0),
+    CHECK (refunded_amount >= 0),
+    CHECK (refunded_amount <= paid_amount)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='共用銷售訂單';
+
+CREATE TABLE IF NOT EXISTS sal_order_item (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '銷售單明細序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    modify_date             DATETIME                                NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP COMMENT '修改日期',
+    sales_order_nid         BIGINT UNSIGNED                     NOT NULL COMMENT '銷售單流水號',
+    line_no                 INT                                 NOT NULL COMMENT '明細行號',
+    quote_item_sid          VARCHAR(32)                             NULL COMMENT '來源報價明細序號',
+    item_sid                VARCHAR(32)                             NULL COMMENT 'Item序號',
+    variant_sid             VARCHAR(32)                             NULL COMMENT '變體序號',
+    item_type               VARCHAR(30)                         NOT NULL COMMENT 'PRODUCT商品;MATERIAL材料;EQUIPMENT設備;SERVICE服務;BUNDLE組合;WORK_ITEM工項;OTHER',
+    item_description        VARCHAR(1000)                       NOT NULL COMMENT '品名或服務說明',
+    specification_text      TEXT                                    NULL COMMENT '規格說明',
+    quantity                DECIMAL(20,6)                       NOT NULL COMMENT '訂購數量',
+    unit_sid                VARCHAR(32)                         NOT NULL COMMENT '單位序號',
+    list_price              DECIMAL(20,6)                       NOT NULL DEFAULT 0 COMMENT '牌價',
+    base_price              DECIMAL(20,6)                       NOT NULL DEFAULT 0 COMMENT '基礎價格',
+    unit_price              DECIMAL(20,6)                       NOT NULL COMMENT '成交單價',
+    discount_rate           DECIMAL(8,4)                        NOT NULL DEFAULT 0 COMMENT '折扣率',
+    discount_amount         DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '折扣金額',
+    promotion_amount        DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '活動優惠金額',
+    tax_sid                 VARCHAR(32)                             NULL COMMENT '稅別序號',
+    tax_rate                DECIMAL(8,4)                        NOT NULL DEFAULT 0 COMMENT '稅率快照',
+    tax_amount              DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '稅額',
+    line_amount             DECIMAL(20,4)                       NOT NULL COMMENT '明細總額',
+    requested_delivery_date DATE                                    NULL COMMENT '需求交期',
+    warehouse_sid           VARCHAR(32)                             NULL COMMENT '履約倉庫序號',
+    project_sid             VARCHAR(32)                             NULL COMMENT '專案序號',
+    site_sid                VARCHAR(32)                             NULL COMMENT '工地序號',
+    wbs_sid                 VARCHAR(32)                             NULL COMMENT 'WBS序號',
+    contract_item_sid       VARCHAR(32)                             NULL COMMENT '合約明細序號',
+    pricing_result_sid      VARCHAR(32)                             NULL COMMENT 'PricingDB計價結果序號',
+    price_snapshot          JSON                                    NULL COMMENT '價格快照',
+    item_snapshot           JSON                                    NULL COMMENT 'Item名稱、規格與屬性快照',
+    reserved_qty            DECIMAL(20,6)                       NOT NULL DEFAULT 0 COMMENT '已預留數量',
+    fulfilled_qty           DECIMAL(20,6)                       NOT NULL DEFAULT 0 COMMENT '已履約數量',
+    invoiced_qty            DECIMAL(20,6)                       NOT NULL DEFAULT 0 COMMENT '已開票數量',
+    returned_qty            DECIMAL(20,6)                       NOT NULL DEFAULT 0 COMMENT '已退貨數量',
+    cancelled_qty           DECIMAL(20,6)                       NOT NULL DEFAULT 0 COMMENT '取消數量',
+    backorder_qty           DECIMAL(20,6)                       NOT NULL DEFAULT 0 COMMENT '缺貨待補數量',
+    item_status             VARCHAR(30)                         NOT NULL DEFAULT 'OPEN' COMMENT 'OPEN待處理;RESERVED已預留;PARTIAL部分履約;FULFILLED已履約;BACKORDER缺貨待補;RETURNED已退貨;CANCELLED取消;CLOSED結束',
+    remark                  TEXT                                    NULL COMMENT '備註',
+    CONSTRAINT fk_soi_order
+        FOREIGN KEY (sales_order_nid) REFERENCES sal_order(nid),
+    CONSTRAINT uk_soi_order_line UNIQUE (sales_order_nid, line_no),
+    INDEX idx_soi_order_nid (sales_order_nid),
+    INDEX idx_soi_quote_item_sid (quote_item_sid),
+    INDEX idx_soi_item_sid (item_sid),
+    INDEX idx_soi_variant_sid (variant_sid),
+    INDEX idx_soi_item_type (item_type),
+    INDEX idx_soi_warehouse_sid (warehouse_sid),
+    INDEX idx_soi_project_sid (project_sid),
+    INDEX idx_soi_site_sid (site_sid),
+    INDEX idx_soi_wbs_sid (wbs_sid),
+    INDEX idx_soi_contract_item_sid (contract_item_sid),
+    INDEX idx_soi_pricing_result_sid (pricing_result_sid),
+    INDEX idx_soi_requested_delivery_date (requested_delivery_date),
+    INDEX idx_soi_status (item_status),
+    CHECK (line_no > 0),
+    CHECK (quantity > 0),
+    CHECK (list_price >= 0),
+    CHECK (base_price >= 0),
+    CHECK (unit_price >= 0),
+    CHECK (discount_rate >= 0),
+    CHECK (discount_amount >= 0),
+    CHECK (promotion_amount >= 0),
+    CHECK (tax_rate >= 0),
+    CHECK (tax_amount >= 0),
+    CHECK (line_amount >= 0),
+    CHECK (reserved_qty >= 0),
+    CHECK (fulfilled_qty >= 0),
+    CHECK (invoiced_qty >= 0),
+    CHECK (returned_qty >= 0),
+    CHECK (cancelled_qty >= 0),
+    CHECK (backorder_qty >= 0),
+    CHECK (fulfilled_qty + cancelled_qty <= quantity),
+    CHECK (returned_qty <= fulfilled_qty)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='共用銷售訂單明細';
+
+-- =========================================================
+-- 04. 交期與履約需求
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS sal_delivery_schedule (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '交期排程序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    modify_date             DATETIME                                NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP COMMENT '修改日期',
+    sales_order_item_nid    BIGINT UNSIGNED                     NOT NULL COMMENT '銷售明細流水號',
+    schedule_no             INT                                 NOT NULL COMMENT '排程序號',
+    scheduled_qty           DECIMAL(20,6)                       NOT NULL COMMENT '排程數量',
+    planned_delivery_date   DATE                                NOT NULL COMMENT '計畫交貨日',
+    confirmed_delivery_date DATE                                    NULL COMMENT '確認交貨日',
+    actual_delivery_date    DATE                                    NULL COMMENT '實際交貨日',
+    warehouse_sid           VARCHAR(32)                             NULL COMMENT '履約倉庫序號',
+    shipping_address_sid    VARCHAR(32)                             NULL COMMENT '配送地址序號',
+    fulfillment_method      VARCHAR(30)                         NOT NULL DEFAULT 'DELIVERY' COMMENT 'DELIVERY配送;PICKUP自取;DIGITAL數位;SERVICE服務;PROJECT_SITE工地交付',
+    schedule_status         VARCHAR(20)                         NOT NULL DEFAULT 'PLANNED' COMMENT 'PLANNED計畫;CONFIRMED確認;RESERVED已預留;PARTIAL部分履約;FULFILLED完成;DELAYED延遲;CANCELLED取消',
+    delay_reason            TEXT                                    NULL COMMENT '延遲原因',
+    CONSTRAINT fk_sds_order_item
+        FOREIGN KEY (sales_order_item_nid) REFERENCES sal_order_item(nid),
+    CONSTRAINT uk_sds_item_schedule UNIQUE (sales_order_item_nid, schedule_no),
+    INDEX idx_sds_order_item_nid (sales_order_item_nid),
+    INDEX idx_sds_planned_delivery_date (planned_delivery_date),
+    INDEX idx_sds_confirmed_delivery_date (confirmed_delivery_date),
+    INDEX idx_sds_warehouse_sid (warehouse_sid),
+    INDEX idx_sds_fulfillment_method (fulfillment_method),
+    INDEX idx_sds_status (schedule_status),
+    CHECK (schedule_no > 0),
+    CHECK (scheduled_qty > 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='銷售交期與履約排程';
+
+CREATE TABLE IF NOT EXISTS sal_fulfillment_request (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '履約申請序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    modify_date             DATETIME                                NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP COMMENT '修改日期',
+    request_no              VARCHAR(100)                        NOT NULL COMMENT '履約申請編號',
+    sales_order_sid         VARCHAR(32)                         NOT NULL COMMENT '銷售單序號',
+    fulfillment_type        VARCHAR(30)                         NOT NULL COMMENT 'SHIPMENT出貨;PICKUP自取;DIGITAL數位;SERVICE服務;PROJECT_DELIVERY專案交付;INSTALLATION安裝',
+    warehouse_sid           VARCHAR(32)                             NULL COMMENT '履約倉庫序號',
+    project_sid             VARCHAR(32)                             NULL COMMENT '專案序號',
+    site_sid                VARCHAR(32)                             NULL COMMENT '工地序號',
+    shipping_address_sid    VARCHAR(32)                             NULL COMMENT '配送地址序號',
+    requested_date          DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '申請時間',
+    required_date           DATETIME                                NULL COMMENT '要求完成時間',
+    reservation_sid         VARCHAR(32)                             NULL COMMENT 'InventoryDB庫存預留序號',
+    fulfillment_order_sid   VARCHAR(32)                             NULL COMMENT 'FulfillmentDB履約單序號',
+    request_status          VARCHAR(30)                         NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING待處理;RESERVED已預留;ACCEPTED已接受;PROCESSING處理中;PARTIAL部分完成;COMPLETED完成;FAILED失敗;CANCELLED取消',
+    correlation_id          VARCHAR(100)                            NULL COMMENT '跨服務關聯識別碼',
+    error_message           LONGTEXT                                NULL COMMENT '錯誤訊息',
+    CONSTRAINT uk_sfr_request_no UNIQUE (request_no),
+    INDEX idx_sfr_sales_order_sid (sales_order_sid),
+    INDEX idx_sfr_fulfillment_type (fulfillment_type),
+    INDEX idx_sfr_warehouse_sid (warehouse_sid),
+    INDEX idx_sfr_project_sid (project_sid),
+    INDEX idx_sfr_site_sid (site_sid),
+    INDEX idx_sfr_reservation_sid (reservation_sid),
+    INDEX idx_sfr_fulfillment_order_sid (fulfillment_order_sid),
+    INDEX idx_sfr_status (request_status),
+    INDEX idx_sfr_correlation_id (correlation_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='銷售訂單履約申請';
+
+CREATE TABLE IF NOT EXISTS sal_fulfillment_request_item (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '履約申請明細序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    fulfillment_request_nid BIGINT UNSIGNED                     NOT NULL COMMENT '履約申請流水號',
+    line_no                 INT                                 NOT NULL COMMENT '明細行號',
+    sales_order_item_sid    VARCHAR(32)                         NOT NULL COMMENT '銷售明細序號',
+    delivery_schedule_sid   VARCHAR(32)                             NULL COMMENT '交期排程序號',
+    request_qty             DECIMAL(20,6)                       NOT NULL COMMENT '履約數量',
+    fulfilled_qty           DECIMAL(20,6)                       NOT NULL DEFAULT 0 COMMENT '已履約數量',
+    unit_sid                VARCHAR(32)                         NOT NULL COMMENT '單位序號',
+    item_status             VARCHAR(20)                         NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING待處理;RESERVED已預留;PROCESSING處理中;PARTIAL部分完成;COMPLETED完成;FAILED失敗;CANCELLED取消',
+    CONSTRAINT fk_sfri_request
+        FOREIGN KEY (fulfillment_request_nid) REFERENCES sal_fulfillment_request(nid),
+    CONSTRAINT uk_sfri_request_line UNIQUE (fulfillment_request_nid, line_no),
+    INDEX idx_sfri_request_nid (fulfillment_request_nid),
+    INDEX idx_sfri_sales_order_item_sid (sales_order_item_sid),
+    INDEX idx_sfri_delivery_schedule_sid (delivery_schedule_sid),
+    INDEX idx_sfri_status (item_status),
+    CHECK (line_no > 0),
+    CHECK (request_qty > 0),
+    CHECK (fulfilled_qty >= 0),
+    CHECK (fulfilled_qty <= request_qty)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='銷售履約申請明細';
+
+-- =========================================================
+-- 05. 訂單地址與聯絡快照
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS sal_order_address (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '訂單地址序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    sales_order_nid         BIGINT UNSIGNED                     NOT NULL COMMENT '銷售單流水號',
+    address_type            VARCHAR(20)                         NOT NULL COMMENT 'BILLING帳單;SHIPPING配送;CONTACT聯絡;PROJECT_SITE工地',
+    source_address_sid      VARCHAR(32)                             NULL COMMENT 'PartyDB或MasterDB來源地址序號',
+    recipient_name          VARCHAR(200)                        NOT NULL COMMENT '收件人',
+    recipient_phone         VARCHAR(50)                             NULL COMMENT '收件電話',
+    country_sid             VARCHAR(32)                         NOT NULL COMMENT '國家序號',
+    region_level1_sid       VARCHAR(32)                             NULL COMMENT '第一層行政區序號',
+    region_level2_sid       VARCHAR(32)                             NULL COMMENT '第二層行政區序號',
+    region_level3_sid       VARCHAR(32)                             NULL COMMENT '第三層行政區序號',
+    postal_code             VARCHAR(20)                             NULL COMMENT '郵遞區號',
+    address_line1           VARCHAR(500)                        NOT NULL COMMENT '主要地址',
+    address_line2           VARCHAR(500)                            NULL COMMENT '補充地址',
+    latitude                DECIMAL(12,8)                           NULL COMMENT '緯度',
+    longitude               DECIMAL(12,8)                           NULL COMMENT '經度',
+    delivery_note           VARCHAR(1000)                           NULL COMMENT '配送備註',
+    CONSTRAINT fk_soa_order
+        FOREIGN KEY (sales_order_nid) REFERENCES sal_order(nid),
+    CONSTRAINT uk_soa_order_address_type UNIQUE (sales_order_nid, address_type),
+    INDEX idx_soa_order_nid (sales_order_nid),
+    INDEX idx_soa_address_type (address_type),
+    INDEX idx_soa_source_address_sid (source_address_sid),
+    INDEX idx_soa_country_sid (country_sid)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='訂單地址快照';
+
+CREATE TABLE IF NOT EXISTS sal_order_contact (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '訂單聯絡人序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    sales_order_nid         BIGINT UNSIGNED                     NOT NULL COMMENT '銷售單流水號',
+    contact_type            VARCHAR(30)                         NOT NULL COMMENT 'ORDER下單;BILLING帳務;SHIPPING配送;PROJECT專案;EMERGENCY緊急',
+    source_party_sid        VARCHAR(32)                             NULL COMMENT 'PartyDB來源Party序號',
+    contact_name            VARCHAR(200)                        NOT NULL COMMENT '聯絡人姓名',
+    contact_email           VARCHAR(200)                            NULL COMMENT 'Email',
+    contact_mobile          VARCHAR(50)                             NULL COMMENT '手機',
+    contact_phone           VARCHAR(50)                             NULL COMMENT '電話',
+    department_name         VARCHAR(200)                            NULL COMMENT '部門名稱快照',
+    job_title               VARCHAR(150)                            NULL COMMENT '職稱快照',
+    primary_mark            TINYINT(1)                          NOT NULL DEFAULT 0 COMMENT '是否主要聯絡人',
+    CONSTRAINT fk_soc_order
+        FOREIGN KEY (sales_order_nid) REFERENCES sal_order(nid),
+    CONSTRAINT uk_soc_order_contact UNIQUE (sales_order_nid, contact_type, contact_name),
+    INDEX idx_soc_order_nid (sales_order_nid),
+    INDEX idx_soc_contact_type (contact_type),
+    INDEX idx_soc_source_party_sid (source_party_sid),
+    INDEX idx_soc_primary_mark (primary_mark)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='訂單聯絡人快照';
+
+-- =========================================================
+-- 06. 付款與應收串接
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS sal_payment_request (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '付款請求序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    modify_date             DATETIME                                NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP COMMENT '修改日期',
+    payment_request_no      VARCHAR(100)                        NOT NULL COMMENT '付款請求編號',
+    sales_order_sid         VARCHAR(32)                         NOT NULL COMMENT '銷售單序號',
+    payment_method_sid      VARCHAR(32)                         NOT NULL COMMENT '付款方式序號',
+    currency_sid            VARCHAR(32)                         NOT NULL COMMENT '幣別序號',
+    requested_amount        DECIMAL(20,4)                       NOT NULL COMMENT '請求付款金額',
+    due_date                DATETIME                                NULL COMMENT '付款期限',
+    external_payment_sid    VARCHAR(32)                             NULL COMMENT 'PaymentDB付款單序號',
+    virtual_account_no      VARCHAR(100)                            NULL COMMENT '虛擬帳號',
+    payment_url             VARCHAR(1000)                           NULL COMMENT '付款網址',
+    request_status          VARCHAR(20)                         NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING待付款;PROCESSING處理中;PAID已付款;FAILED失敗;EXPIRED過期;CANCELLED取消',
+    paid_date               DATETIME                                NULL COMMENT '付款完成時間',
+    correlation_id          VARCHAR(100)                            NULL COMMENT '跨服務關聯識別碼',
+    error_message           LONGTEXT                                NULL COMMENT '錯誤訊息',
+    CONSTRAINT uk_spr_payment_request_no UNIQUE (payment_request_no),
+    INDEX idx_spr_sales_order_sid (sales_order_sid),
+    INDEX idx_spr_payment_method_sid (payment_method_sid),
+    INDEX idx_spr_external_payment_sid (external_payment_sid),
+    INDEX idx_spr_due_date (due_date),
+    INDEX idx_spr_status (request_status),
+    INDEX idx_spr_correlation_id (correlation_id),
+    CHECK (requested_amount > 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='銷售訂單付款請求';
+
+CREATE TABLE IF NOT EXISTS sal_receivable_request (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '應收建立請求序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    sales_order_sid         VARCHAR(32)                         NOT NULL COMMENT '銷售單序號',
+    request_type            VARCHAR(30)                         NOT NULL COMMENT 'DEPOSIT訂金;MILESTONE里程碑;DELIVERY交貨;INVOICE開票;FINAL尾款;ADJUSTMENT調整',
+    reference_type          VARCHAR(50)                             NULL COMMENT '來源類型',
+    reference_sid           VARCHAR(32)                             NULL COMMENT '來源資料序號',
+    currency_sid            VARCHAR(32)                         NOT NULL COMMENT '幣別序號',
+    receivable_amount       DECIMAL(20,4)                       NOT NULL COMMENT '應收金額',
+    due_date                DATE                                    NULL COMMENT '到期日',
+    accounting_receivable_sid VARCHAR(32)                           NULL COMMENT 'AccountingDB應收單序號',
+    request_status          VARCHAR(20)                         NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING待處理;PROCESSING處理中;SUCCESS成功;FAILED失敗;CANCELLED取消',
+    correlation_id          VARCHAR(100)                            NULL COMMENT '跨服務關聯識別碼',
+    error_message           LONGTEXT                                NULL COMMENT '錯誤訊息',
+    INDEX idx_srr_sales_order_sid (sales_order_sid),
+    INDEX idx_srr_request_type (request_type),
+    INDEX idx_srr_reference (reference_type, reference_sid),
+    INDEX idx_srr_accounting_receivable_sid (accounting_receivable_sid),
+    INDEX idx_srr_status (request_status),
+    INDEX idx_srr_correlation_id (correlation_id),
+    CHECK (receivable_amount > 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='銷售訂單應收帳款建立請求';
+
+-- =========================================================
+-- 07. 發票串接
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS sal_invoice_request (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '發票建立請求序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    modify_date             DATETIME                                NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP COMMENT '修改日期',
+    invoice_request_no      VARCHAR(100)                        NOT NULL COMMENT '發票請求編號',
+    sales_order_sid         VARCHAR(32)                         NOT NULL COMMENT '銷售單序號',
+    request_type            VARCHAR(30)                         NOT NULL COMMENT 'FULL全額;PARTIAL部分;DEPOSIT訂金;MILESTONE里程碑;FINAL尾款',
+    invoice_date            DATE                                    NULL COMMENT '預計開票日',
+    invoice_title           VARCHAR(300)                            NULL COMMENT '發票抬頭',
+    invoice_tax_no          VARCHAR(50)                             NULL COMMENT '統一編號',
+    carrier_type            VARCHAR(30)                             NULL COMMENT 'MOBILE手機條碼;CERT自然人憑證;DONATE捐贈;MEMBER會員載具;NONE無',
+    carrier_no              VARCHAR(200)                            NULL COMMENT '載具號碼',
+    donation_code           VARCHAR(50)                             NULL COMMENT '捐贈碼',
+    currency_sid            VARCHAR(32)                         NOT NULL COMMENT '幣別序號',
+    invoice_amount          DECIMAL(20,4)                       NOT NULL COMMENT '開票金額',
+    tax_amount              DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '稅額',
+    invoice_tax_sid         VARCHAR(32)                             NULL COMMENT 'InvoiceTaxDB發票序號',
+    request_status          VARCHAR(20)                         NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING待處理;PROCESSING處理中;ISSUED已開立;FAILED失敗;CANCELLED取消',
+    correlation_id          VARCHAR(100)                            NULL COMMENT '跨服務關聯識別碼',
+    error_message           LONGTEXT                                NULL COMMENT '錯誤訊息',
+    CONSTRAINT uk_sinv_invoice_request_no UNIQUE (invoice_request_no),
+    INDEX idx_sinv_sales_order_sid (sales_order_sid),
+    INDEX idx_sinv_request_type (request_type),
+    INDEX idx_sinv_invoice_date (invoice_date),
+    INDEX idx_sinv_invoice_tax_sid (invoice_tax_sid),
+    INDEX idx_sinv_status (request_status),
+    INDEX idx_sinv_correlation_id (correlation_id),
+    CHECK (invoice_amount > 0),
+    CHECK (tax_amount >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='銷售訂單發票建立請求';
+
+CREATE TABLE IF NOT EXISTS sal_invoice_request_item (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '發票請求明細序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    invoice_request_nid     BIGINT UNSIGNED                     NOT NULL COMMENT '發票請求流水號',
+    line_no                 INT                                 NOT NULL COMMENT '明細行號',
+    sales_order_item_sid    VARCHAR(32)                         NOT NULL COMMENT '銷售單明細序號',
+    invoice_qty             DECIMAL(20,6)                       NOT NULL COMMENT '開票數量',
+    unit_price              DECIMAL(20,6)                       NOT NULL COMMENT '開票單價',
+    tax_rate                DECIMAL(8,4)                        NOT NULL DEFAULT 0 COMMENT '稅率',
+    tax_amount              DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '稅額',
+    line_amount             DECIMAL(20,4)                       NOT NULL COMMENT '開票金額',
+    CONSTRAINT fk_sinvi_request
+        FOREIGN KEY (invoice_request_nid) REFERENCES sal_invoice_request(nid),
+    CONSTRAINT uk_sinvi_request_line UNIQUE (invoice_request_nid, line_no),
+    INDEX idx_sinvi_request_nid (invoice_request_nid),
+    INDEX idx_sinvi_sales_order_item_sid (sales_order_item_sid),
+    CHECK (line_no > 0),
+    CHECK (invoice_qty > 0),
+    CHECK (unit_price >= 0),
+    CHECK (tax_rate >= 0),
+    CHECK (tax_amount >= 0),
+    CHECK (line_amount >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='銷售訂單發票請求明細';
+
+-- =========================================================
+-- 08. 訂單變更與取消
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS sal_order_change (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '銷售單變更序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    modify_date             DATETIME                                NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP COMMENT '修改日期',
+    change_no               VARCHAR(100)                        NOT NULL COMMENT '變更單號',
+    sales_order_sid         VARCHAR(32)                         NOT NULL COMMENT '銷售單序號',
+    change_type             VARCHAR(30)                         NOT NULL COMMENT 'QUANTITY數量;PRICE價格;DELIVERY交期;ADDRESS地址;ITEM品項;PAYMENT付款;CANCEL取消;OTHER',
+    before_data             JSON                                    NULL COMMENT '變更前資料',
+    requested_data          JSON                                NOT NULL COMMENT '申請變更資料',
+    changed_fields          JSON                                    NULL COMMENT '變更欄位',
+    amount_difference       DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '金額差異',
+    change_reason           TEXT                                NOT NULL COMMENT '變更原因',
+    requester_type          VARCHAR(20)                         NOT NULL COMMENT 'CUSTOMER客戶;USER內部人員;SYSTEM系統',
+    requester_sid           VARCHAR(32)                             NULL COMMENT '申請對象序號',
+    change_status           VARCHAR(30)                         NOT NULL DEFAULT 'DRAFT' COMMENT 'DRAFT草稿;SUBMITTED已送出;REVIEW待審;APPROVED核准;REJECTED駁回;APPLIED已套用;CANCELLED取消',
+    workflow_instance_sid   VARCHAR(32)                             NULL COMMENT 'WorkflowDB流程實例序號',
+    approved_user_sid       VARCHAR(32)                             NULL COMMENT '核准人員序號',
+    approved_date           DATETIME                                NULL COMMENT '核准時間',
+    applied_date            DATETIME                                NULL COMMENT '套用時間',
+    CONSTRAINT uk_socg_change_no UNIQUE (change_no),
+    INDEX idx_socg_sales_order_sid (sales_order_sid),
+    INDEX idx_socg_change_type (change_type),
+    INDEX idx_socg_requester (requester_type, requester_sid),
+    INDEX idx_socg_status (change_status),
+    INDEX idx_socg_workflow_instance_sid (workflow_instance_sid)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='銷售訂單變更申請';
+
+CREATE TABLE IF NOT EXISTS sal_cancellation (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '訂單取消序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    modify_date             DATETIME                                NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP COMMENT '修改日期',
+    cancellation_no         VARCHAR(100)                        NOT NULL COMMENT '取消申請編號',
+    sales_order_sid         VARCHAR(32)                         NOT NULL COMMENT '銷售單序號',
+    cancellation_type       VARCHAR(20)                         NOT NULL COMMENT 'FULL整單;PARTIAL部分',
+    reason_code             VARCHAR(50)                         NOT NULL COMMENT '取消原因代碼',
+    reason                  TEXT                                    NULL COMMENT '取消原因',
+    requested_by_type       VARCHAR(20)                         NOT NULL COMMENT 'CUSTOMER客戶;USER內部人員;SYSTEM系統',
+    requested_by_sid        VARCHAR(32)                             NULL COMMENT '申請對象序號',
+    refund_required         TINYINT(1)                          NOT NULL DEFAULT 0 COMMENT '是否需要退款',
+    restock_required        TINYINT(1)                          NOT NULL DEFAULT 0 COMMENT '是否需要回補庫存',
+    cancellation_status     VARCHAR(30)                         NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING待處理;REVIEW待審;APPROVED核准;REJECTED駁回;PROCESSING處理中;COMPLETED完成;FAILED失敗',
+    workflow_instance_sid   VARCHAR(32)                             NULL COMMENT 'WorkflowDB流程實例序號',
+    completed_date          DATETIME                                NULL COMMENT '完成時間',
+    error_message           LONGTEXT                                NULL COMMENT '錯誤訊息',
+    CONSTRAINT uk_scan_cancellation_no UNIQUE (cancellation_no),
+    INDEX idx_scan_sales_order_sid (sales_order_sid),
+    INDEX idx_scan_cancellation_type (cancellation_type),
+    INDEX idx_scan_requested_by (requested_by_type, requested_by_sid),
+    INDEX idx_scan_status (cancellation_status),
+    INDEX idx_scan_workflow_instance_sid (workflow_instance_sid)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='銷售訂單取消流程';
+
+CREATE TABLE IF NOT EXISTS sal_cancellation_item (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '訂單取消明細序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    cancellation_nid        BIGINT UNSIGNED                     NOT NULL COMMENT '取消主檔流水號',
+    sales_order_item_sid    VARCHAR(32)                         NOT NULL COMMENT '銷售明細序號',
+    cancel_qty              DECIMAL(20,6)                       NOT NULL COMMENT '取消數量',
+    cancel_amount           DECIMAL(20,4)                       NOT NULL DEFAULT 0 COMMENT '取消金額',
+    fulfilled_qty_snapshot  DECIMAL(20,6)                       NOT NULL DEFAULT 0 COMMENT '取消時已履約數量',
+    item_status             VARCHAR(20)                         NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING待處理;APPROVED核准;REJECTED駁回;COMPLETED完成',
+    CONSTRAINT fk_scani_cancellation
+        FOREIGN KEY (cancellation_nid) REFERENCES sal_cancellation(nid),
+    CONSTRAINT uk_scani_cancel_item UNIQUE (cancellation_nid, sales_order_item_sid),
+    INDEX idx_scani_cancellation_nid (cancellation_nid),
+    INDEX idx_scani_sales_order_item_sid (sales_order_item_sid),
+    INDEX idx_scani_status (item_status),
+    CHECK (cancel_qty > 0),
+    CHECK (cancel_amount >= 0),
+    CHECK (fulfilled_qty_snapshot >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='銷售訂單取消明細';
+
+-- =========================================================
+-- 09. 訂單註記與附件
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS sal_order_note (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '訂單註記序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    sales_order_sid         VARCHAR(32)                         NOT NULL COMMENT '銷售單序號',
+    note_type               VARCHAR(30)                         NOT NULL COMMENT 'CUSTOMER客戶;INTERNAL內部;WAREHOUSE倉庫;PAYMENT付款;DELIVERY配送;PROJECT專案;SYSTEM系統',
+    note_content            TEXT                                NOT NULL COMMENT '註記內容',
+    visibility              VARCHAR(20)                         NOT NULL DEFAULT 'INTERNAL' COMMENT 'INTERNAL內部;CUSTOMER客戶可見;PARTNER合作夥伴可見',
+    important_mark          TINYINT(1)                          NOT NULL DEFAULT 0 COMMENT '是否重要',
+    create_user_sid         VARCHAR(32)                             NULL COMMENT '建立人員序號',
+    INDEX idx_son_sales_order_sid (sales_order_sid),
+    INDEX idx_son_note_type (note_type),
+    INDEX idx_son_visibility (visibility),
+    INDEX idx_son_important_mark (important_mark),
+    INDEX idx_son_create_date (create_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='銷售訂單註記';
+
+CREATE TABLE IF NOT EXISTS sal_order_attachment (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '訂單附件序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    sales_order_sid         VARCHAR(32)                         NOT NULL COMMENT '銷售單序號',
+    attachment_type         VARCHAR(30)                         NOT NULL COMMENT 'CONTRACT合約;PURCHASE_ORDER客戶採購單;DRAWING圖面;SPEC規格;APPROVAL核准;OTHER',
+    file_sid                VARCHAR(32)                         NOT NULL COMMENT 'FileDB檔案序號',
+    file_name               VARCHAR(500)                            NULL COMMENT '檔名快照',
+    version_no              INT                                 NOT NULL DEFAULT 1 COMMENT '附件版本',
+    customer_visible        TINYINT(1)                          NOT NULL DEFAULT 0 COMMENT '是否客戶可見',
+    create_user_sid         VARCHAR(32)                             NULL COMMENT '建立人員序號',
+    INDEX idx_soa2_sales_order_sid (sales_order_sid),
+    INDEX idx_soa2_attachment_type (attachment_type),
+    INDEX idx_soa2_file_sid (file_sid),
+    INDEX idx_soa2_customer_visible (customer_visible),
+    CHECK (version_no > 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='銷售訂單附件';
+
+-- =========================================================
+-- 10. 狀態歷程與事件
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS sal_status_history (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '銷售狀態歷程序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '異動時間',
+    entity_type             VARCHAR(30)                         NOT NULL COMMENT 'QUOTE報價;ORDER訂單;ITEM明細;FULFILLMENT履約;PAYMENT付款;INVOICE發票;CHANGE變更;CANCELLATION取消',
+    entity_sid              VARCHAR(32)                         NOT NULL COMMENT '銷售實體序號',
+    old_status              VARCHAR(30)                             NULL COMMENT '原狀態',
+    new_status              VARCHAR(30)                         NOT NULL COMMENT '新狀態',
+    event_code              VARCHAR(100)                            NULL COMMENT '觸發事件代碼',
+    source_service_code     VARCHAR(80)                             NULL COMMENT '來源服務代碼',
+    source_reference_sid    VARCHAR(32)                             NULL COMMENT '來源資料序號',
+    operator_user_sid       VARCHAR(32)                             NULL COMMENT '操作人員序號',
+    reason_code             VARCHAR(50)                             NULL COMMENT '原因代碼',
+    reason                  TEXT                                    NULL COMMENT '原因說明',
+    correlation_id          VARCHAR(100)                            NULL COMMENT '跨服務關聯識別碼',
+    INDEX idx_ssh_entity (entity_type, entity_sid),
+    INDEX idx_ssh_new_status (new_status),
+    INDEX idx_ssh_event_code (event_code),
+    INDEX idx_ssh_operator_user_sid (operator_user_sid),
+    INDEX idx_ssh_correlation_id (correlation_id),
+    INDEX idx_ssh_create_date (create_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='銷售狀態歷程';
+
+CREATE TABLE IF NOT EXISTS sal_event (
+    nid                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '流水號',
+    sid                     VARCHAR(32)                         NOT NULL UNIQUE COMMENT '銷售事件序號',
+    create_date             DATETIME                            NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '建立日期',
+    entity_type             VARCHAR(30)                         NOT NULL COMMENT 'QUOTE;ORDER;ITEM;FULFILLMENT;PAYMENT;INVOICE;CHANGE;CANCELLATION',
+    entity_sid              VARCHAR(32)                         NOT NULL COMMENT '實體序號',
+    event_code              VARCHAR(120)                        NOT NULL COMMENT '事件代碼',
+    event_version           INT                                 NOT NULL DEFAULT 1 COMMENT '事件版本',
+    event_data              JSON                                    NULL COMMENT '事件內容',
+    source_event_id         VARCHAR(100)                            NULL COMMENT '來源事件ID',
+    correlation_id          VARCHAR(100)                            NULL COMMENT '關聯識別碼',
+    causation_id            VARCHAR(100)                            NULL COMMENT '因果事件ID',
+    outbox_event_sid        VARCHAR(32)                             NULL COMMENT 'IntegrationDB Outbox事件序號',
+    process_status          VARCHAR(20)                         NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING待處理;SUCCESS成功;FAILED失敗;IGNORED忽略',
+    processed_date          DATETIME                                NULL COMMENT '處理時間',
+    error_message           TEXT                                    NULL COMMENT '錯誤訊息',
+    UNIQUE KEY uk_se_source_event_id (source_event_id),
+    INDEX idx_se_entity (entity_type, entity_sid),
+    INDEX idx_se_event_code (event_code),
+    INDEX idx_se_correlation_id (correlation_id),
+    INDEX idx_se_outbox_event_sid (outbox_event_sid),
+    INDEX idx_se_status (process_status),
+    INDEX idx_se_create_date (create_date),
+    CHECK (event_version > 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='銷售領域事件';
+
+SET FOREIGN_KEY_CHECKS = 1;
+";
+    }
+}

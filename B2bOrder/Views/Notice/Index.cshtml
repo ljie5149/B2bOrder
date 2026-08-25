@@ -1,0 +1,412 @@
+﻿@using B2bOrder.Models
+@model B2bOrder.Models.NoticeViewModel
+@{
+    ViewData["Title"] = "系統公告列表";
+
+    var keyword = ViewBag.Keyword as string ?? "";
+    var status = ViewBag.Status as string ?? "";
+    int page = Convert.ToInt32(ViewBag.Page);
+    int total = Convert.ToInt32(ViewBag.Total);
+    int pageSize = Convert.ToInt32(ViewBag.PageSize);
+    int totalPages = (int)Math.Ceiling(total / (double)pageSize);
+
+    // 計算目前的起始編號基礎值
+    int startNumber = (page - 1) * pageSize;
+    int index = 1;
+
+    string nextDir(string field)
+    {
+        return ViewBag.SortField == field && ViewBag.SortDir == "asc" ? "desc" : "asc";
+    }
+}
+
+<div class="container-fluid py-4">
+
+    <div class="mb-4">
+        <h1 class="fw-bold mb-2">@ViewData["Title"]</h1>
+        <div class="text-muted">
+            發布與管理全系統公告、置頂通知與發送即時推播
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <!-- 💡 點擊觸發勾選項目批次已讀 -->
+                    <button type="button" class="btn btn-outline-success" onclick="markSelectedNoticesAsRead()">
+                        <i class="bi bi-check-all"></i> 標示為已讀
+                    </button>
+
+                    <button type="button" class="btn btn-primary" onclick="showCreateAnnouncementModal()">
+                        <i class="bi bi-plus-lg"></i> 新增公告
+                    </button>
+
+                    <button class="btn btn-light border" onclick="location.reload();">
+                        <i class="bi bi-arrow-clockwise"></i>
+                    </button>
+                </div>
+
+                <div class="col-md-6">
+                    <form method="get">
+                        <div class="input-group">
+                            <select class="form-select" name="status" style="max-width:160px;">
+                                <option value="" selected="@(string.IsNullOrEmpty(status))">狀態：全部</option>
+                                <option value="啟用" selected="@(status == "啟用")">啟用</option>
+                                <option value="下架" selected="@(status == "下架")">下架</option>
+                            </select>
+
+                            <input type="text"
+                                   name="keyword"
+                                   class="form-control"
+                                   placeholder="請輸入標題或內文關鍵字"
+                                   value="@keyword" />
+
+                            <button class="btn btn-outline-secondary">
+                                <i class="bi bi-search"></i>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="table-responsive">
+            <table class="table align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th width="50"><input type="checkbox" id="selectAll" /></th>
+                        <th width="80">編號</th>
+                        <th width="120">發布單位</th>
+                        <th width="120">公告分類</th>
+                        <th>
+                            <a asp-action="List"
+                               asp-route-keyword="@keyword"
+                               asp-route-status="@status"
+                               asp-route-sortField="title"
+                               asp-route-sortDir="@nextDir("title")"
+                               class="text-decoration-none text-dark">
+                                公告標題
+                                @if (ViewBag.SortField == "title")
+                                {
+                                    <i class="bi @(ViewBag.SortDir == "asc" ? "bi-sort-alpha-down" : "bi-sort-alpha-up")"></i>
+                                }
+                            </a>
+                        </th>
+                        <th width="120">置頂</th>
+                        <th width="150">
+                            <a asp-action="List"
+                               asp-route-keyword="@keyword"
+                               asp-route-status="@status"
+                               asp-route-sortField="publishDate"
+                               asp-route-sortDir="@nextDir("publishDate")"
+                               class="text-decoration-none text-dark">
+                                發布日期
+                                @if (ViewBag.SortField == "publishDate")
+                                {
+                                    <i class="bi @(ViewBag.SortDir == "asc" ? "bi-sort-numeric-down" : "bi-sort-numeric-up")"></i>
+                                }
+                            </a>
+                        </th>
+                        <th width="100">已讀狀態</th>
+                        <th width="120">狀態</th>
+                        <th width="220">操作</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    @if (Model.DataNoties != null && Model.DataNoties.Any())
+                    {
+                        @foreach (var item in Model.DataNoties)
+                        {
+                            int currentNo = startNumber + index;
+
+                            // 將該筆公告序列化為 JSON，供檢視按鈕直接傳遞物件
+                            var itemJson = Newtonsoft.Json.JsonConvert.SerializeObject(item);
+
+                            <tr>
+                                <!-- 💡 value 改為使用 item.Sid，以便後端寫入已讀紀錄 -->
+                                <td><input type="checkbox" class="chk-item" value="@item.Sid" /></td>
+                                <td>@currentNo</td>
+                                <td>@item.PublishUnit</td>
+                                <td>@item.Category</td>
+                                <td>
+                                    <span class="fw-bold text-dark">@item.Title</span>
+                                    @if (!string.IsNullOrEmpty(item.Content))
+                                    {
+                                        <div class="small text-muted text-truncate" style="max-width: 400px;">
+                                            @System.Text.RegularExpressions.Regex.Replace(item.Content, "<.*?>", string.Empty)
+                                        </div>
+                                    }
+                                </td>
+                                <td>
+                                    @if (item.IsTop == 1)
+                                    {
+                                        <span class="badge bg-danger"><i class="bi bi-pin-angle-fill"></i> 置頂</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">-</span>
+                                    }
+                                </td>
+                                <td>@item.PublishDate.ToString("yyyy-MM-dd")</td>
+                                <td>
+                                    @if (item.IsRead)
+                                    {
+                                        <span class="badge bg-light text-secondary border">已讀</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-danger">未讀</span>
+                                    }
+                                </td>
+                                <td>
+                                    @if (item.Status == "啟用")
+                                    {
+                                        <span class="badge bg-success" role="button" onclick="toggleAnnouncementStatus(@item.Nid, '下架')">
+                                            啟用
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-secondary" role="button" onclick="toggleAnnouncementStatus(@item.Nid, '啟用')">
+                                            下架
+                                        </span>
+                                    }
+                                </td>
+                                <td>
+                                    <button type="button" title="檢視詳細資訊" class="btn btn-info text-white btn-sm"
+                                            onclick='viewNoticeDetail(@Html.Raw(itemJson.Replace("'", "&apos;")))'>
+                                        <i class="bi bi-eye-fill"></i>
+                                    </button>
+
+                                    <button type="button" title="發送即時推播" class="btn btn-primary text-white btn-sm"
+                                            onclick="pushAnnouncementNotice('@item.Sid')">
+                                        <i class="bi bi-megaphone-fill"></i>
+                                    </button>
+
+                                    <button type="button" title="編輯公告" class="btn btn-warning btn-sm"
+                                            onclick="showEditAnnouncementModal('@item.Sid')">
+                                        <i class="bi bi-pencil-square"></i>
+                                    </button>
+
+                                    <button type="button" title="刪除公告" class="btn btn-outline-danger btn-sm"
+                                            onclick="deleteAnnouncement('@item.Sid')">
+                                        <i class="bi bi-trash-fill"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            index++;
+                        }
+                    }
+                    else
+                    {
+                        <tr>
+                            <td colspan="10" class="text-center py-5 text-muted">
+                                <i class="bi bi-inbox fs-2 d-block mb-2"></i> 查無公告資料
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <div class="card-footer bg-white">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    顯示第 @(total == 0 ? 0 : startNumber + 1) ~ @(Math.Min(page * pageSize, total)) 筆，共 @total 筆
+                </div>
+                <nav>
+                    <ul class="pagination mb-0">
+                        @for (int i = 1; i <= totalPages; i++)
+                        {
+                            <li class="page-item @(i == page ? "active" : "")">
+                                <a class="page-link"
+                                   asp-action="List"
+                                   asp-route-page="@i"
+                                   asp-route-keyword="@keyword"
+                                   asp-route-status="@status"
+                                   asp-route-sortField="@ViewBag.SortField"
+                                   asp-route-sortDir="@ViewBag.SortDir">
+                                    @i
+                                </a>
+                            </li>
+                        }
+                    </ul>
+                </nav>
+            </div>
+        </div>
+
+        <partial name="_AnnouncementModals" model="(B2bOrder.Models.AnnouncementViewModel)ViewBag.ModalModel" />
+    </div>
+
+    <!-- 詳細資訊面板區塊 -->
+    <div class="card shadow-sm border-0 d-none mb-3" id="detailPanel" style="font-size: 0.9rem;">
+        <div class="card-header bg-light fw-bold text-dark py-3 border-0 d-flex justify-content-between align-items-center">
+            <span>公告詳細資訊</span>
+            <button type="button" class="btn-close" onclick="$('#detailPanel').addClass('d-none');"></button>
+        </div>
+        <div class="card-body p-4">
+            <div class="row g-3">
+                <div class="col-md-4 col-sm-6">
+                    <span class="text-secondary d-inline-block" style="width: 80px;">發布日期</span>
+                    <span class="text-dark fw-medium" id="detPublishDate">-</span>
+                </div>
+                <div class="col-md-4 col-sm-6">
+                    <span class="text-secondary d-inline-block" style="width: 80px;">發布單位</span>
+                    <span class="text-dark fw-medium" id="detPublishUnit">-</span>
+                </div>
+                <div class="col-md-4 col-sm-6">
+                    <span class="text-secondary d-inline-block" style="width: 80px;">公告分類</span>
+                    <span class="text-dark fw-medium" id="detCategory">-</span>
+                </div>
+                <div class="col-md-4 col-sm-6">
+                    <span class="text-secondary d-inline-block" style="width: 80px;">置頂狀態</span>
+                    <span id="detIsTop">-</span>
+                </div>
+                <div class="col-md-4 col-sm-6">
+                    <span class="text-secondary d-inline-block" style="width: 80px;">狀態</span>
+                    <span id="detStatus">-</span>
+                </div>
+                <div class="col-md-12 border-top pt-3 mt-2">
+                    <span class="text-secondary d-block mb-1 fw-bold">公告標題</span>
+                    <div class="text-dark p-2 bg-light rounded fw-bold" id="detTitle" style="font-size: 1.05rem;">-</div>
+                </div>
+                <div class="col-md-12">
+                    <span class="text-secondary d-block mb-1 fw-bold">公告內容</span>
+                    <div class="text-dark p-3 bg-light rounded border" id="detContent" style="min-height: 100px; max-height: 400px; overflow-y: auto; white-space: pre-line;">-</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts
+{
+    <script src="~/js/signalr.min.js"></script>
+    <script src="~/js/notice.js"></script>
+
+    <script>
+        $(document).ready(function () {
+            // 全選 / 全不選 控制
+            $('#selectAll').on('change', function () {
+                $('.chk-item').prop('checked', this.checked);
+            });
+
+            // 個別勾選框變更時，動態連動全選框
+            $(document).on('change', '.chk-item', function () {
+                if (!this.checked) {
+                    $('#selectAll').prop('checked', false);
+                } else if ($('.chk-item:checked').length === $('.chk-item').length) {
+                    $('#selectAll').prop('checked', true);
+                }
+            });
+        });
+
+        // 💡 標示勾選的項目為已讀
+        function markSelectedNoticesAsRead() {
+            let selectedSids = [];
+            $('.chk-item:checked').each(function () {
+                selectedSids.push($(this).val());
+            });
+
+            if (selectedSids.length === 0) {
+                alert('請先勾選要標示為已讀的公告！');
+                return;
+            }
+
+            if (!confirm(`確定要將選取的 ${selectedSids.length} 筆公告標示為已讀嗎？`)) {
+                return;
+            }
+
+            fetch('/Notice/MarkSelectedAsRead', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ noticeSids: selectedSids })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    location.reload(); // 成功後刷新頁面更新 UI 狀態
+                } else {
+                    alert(data.message || '操作失敗');
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                alert('系統發生錯誤，請稍後再試');
+            });
+        }
+
+        // 標示單篇已讀（檢視詳細時呼叫）
+        function markNoticeAsRead(noticeSid) {
+            if (!noticeSid) return;
+            fetch('/Notice/MarkAsRead', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ noticeSid: noticeSid })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    console.log('單篇已讀標記成功');
+                }
+            })
+            .catch(err => console.error(err));
+        }
+
+        // 檢視公告詳情邏輯
+        function viewNoticeDetail(row) {
+            // 顯示詳細面板
+            $('#detailPanel').removeClass('d-none');
+
+            // 填入純文字欄位
+            $('#detPublishUnit').text(row.PublishUnit || '-');
+            $('#detCategory').text(row.Category || '-');
+            $('#detTitle').text(row.Title || '-');
+
+            // 處理日期格式
+            if (row.PublishDate) {
+                let d = new Date(row.PublishDate);
+                const pad = (n) => n < 10 ? '0' + n : n;
+                $('#detPublishDate').text(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
+            } else {
+                $('#detPublishDate').text('-');
+            }
+
+            // 處理置頂狀態
+            if (row.IsTop === 1) {
+                $('#detIsTop').html('<span class="badge bg-danger"><i class="bi bi-pin-angle-fill"></i> 置頂</span>');
+            } else {
+                $('#detIsTop').html('<span class="text-muted">未置頂</span>');
+            }
+
+            // 處理啟用狀態樣式
+            let currentStatus = row.Status || '下架';
+            const badgeStyle = 'font-size: 0.95rem; font-weight: 600; border: 2px solid; padding: 0.25rem 0.6rem; background-color: #ffffff;';
+            if (currentStatus === '啟用') {
+                $('#detStatus').html(`<span class="badge rounded-pill" style="${badgeStyle} color: #198754; border-color: #198754;">啟用</span>`);
+            } else {
+                $('#detStatus').html(`<span class="badge rounded-pill" style="${badgeStyle} color: #6c757d; border-color: #6c757d;">下架</span>`);
+            }
+
+            // 處理公告內文
+            if (row.Content) {
+                $('#detContent').html(row.Content);
+            } else {
+                $('#detContent').text('無公告內容');
+            }
+
+            // 若該公告為未讀，觸發單篇已讀並刷新物件狀態
+            if (row && row.Sid && !row.IsRead) {
+                markNoticeAsRead(row.Sid);
+                row.IsRead = true;
+            }
+
+            // 平滑滾動至詳細區塊
+            $('html, body').animate({ scrollTop: $("#detailPanel").offset().top - 20 }, 250);
+        }
+    </script>
+}

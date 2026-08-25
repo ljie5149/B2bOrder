@@ -1,0 +1,1114 @@
+@using B2bOrder.Models.Common
+@model ExpireNoticePageViewModel
+
+@{
+    ViewData["Title"] = "到期通知";
+    var currentTab = ViewBag.Tab?.ToString() ?? "member";
+
+
+    var keyword = ViewBag.Keyword as string ?? "";
+    var status = ViewBag.Status as string ?? "";
+    int page =
+        Convert.ToInt32(ViewBag.Page);
+
+    int total =
+        Convert.ToInt32(ViewBag.Total);
+
+    int pageSize =
+        Convert.ToInt32(ViewBag.PageSize);
+
+    int totalPages =
+        (int)Math.Ceiling(
+            total / (double)pageSize
+        );
+
+    // 計算目前的起始編號基礎值
+    int startNumber = (page - 1) * pageSize;
+    int index = 1;
+
+    string nextDir(string field)
+    {
+        return ViewBag.SortField == field &&
+               ViewBag.SortDir == "asc"
+               ? "desc"
+               : "asc";
+    }
+
+
+    var holder_str = "搜尋會員編號、姓名、Email";
+    var cur_tab = "member";
+    if (currentTab == "member")
+    {
+        cur_tab = "member";
+    }
+    else
+    {
+        cur_tab = "history";
+        holder_str = "搜尋會員編號、通知類型、發送方式、標題";
+    }
+}
+
+<div class="mb-4">
+
+    <h1 class="fw-bold mb-2">
+        @ViewData["Title"]
+    </h1>
+
+    <div class="text-muted">
+        管理會員到期提醒與通知設定，並檢視發送紀錄
+    </div>
+
+</div>
+
+<!-- 統計卡片 -->
+
+<div class="row g-3 mb-4">
+
+    <div class="col-lg-3 col-md-6">
+
+        <div class="card border-0 shadow-sm">
+
+            <div class="card-body text-center">
+
+                <i class="bi bi-exclamation-circle-fill text-warning fs-1"></i>
+
+                <h3 class="mt-2">
+                    @Model.ExpireSoonCount
+                </h3>
+
+                <div class="text-muted">
+                    即將到期會員
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <div class="col-lg-3 col-md-6">
+
+        <div class="card border-0 shadow-sm">
+
+            <div class="card-body text-center">
+
+                <i class="bi bi-clock-history text-danger fs-1"></i>
+
+                <h3 class="mt-2">
+                    @Model.ExpiredCount
+                </h3>
+
+                <div class="text-muted">
+                    已逾期會員
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <div class="col-lg-3 col-md-6">
+
+        <div class="card border-0 shadow-sm">
+
+            <div class="card-body text-center">
+
+                <i class="bi bi-send-fill text-success fs-1"></i>
+
+                <h3 class="mt-2">
+                    @Model.NotifyCount
+                </h3>
+
+                <div class="text-muted">
+                    本月通知數
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <div class="col-lg-3 col-md-6">
+
+        <div class="card border-0 shadow-sm">
+
+            <div class="card-body text-center">
+
+                <i class="bi bi-check-circle-fill text-primary fs-1"></i>
+
+                <h3 class="mt-2">
+                    @Model.SuccessRate %
+                </h3>
+
+                <div class="text-muted">
+                    成功率
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+<ul class="nav nav-tabs mb-4">
+
+    <li class="nav-item">
+
+        <a class="nav-link @(currentTab == "member" ? "active" : "")"
+           asp-action="ExpireNotice"
+           asp-route-tab="member">
+
+            到期會員清單
+
+        </a>
+
+    </li>
+
+    <li class="nav-item">
+
+        <a class="nav-link @(currentTab == "history" ? "active" : "")"
+           asp-action="ExpireNotice"
+           asp-route-tab="history">
+
+            通知紀錄
+
+        </a>
+
+    </li>
+
+</ul>
+
+<form method="get" class="mb-3">
+
+    <input type="hidden"
+           name="tab"
+           value="@cur_tab" />
+
+    <div class="row g-2">
+
+        <div class="col-md-4">
+
+            <input type="text"
+                   name="keyword"
+                   value="@ViewBag.Keyword"
+                   class="form-control"
+                   placeholder="@holder_str" />
+
+        </div>
+
+        <div class="col-md-1">
+
+            <button class="btn btn-primary">
+
+                <i class="bi bi-search"></i>
+                搜尋
+
+            </button>
+
+        </div>
+
+        <div class="col-md-2">
+
+            @if (currentTab == "member")
+            {
+                <a asp-action="ExportExpireNotice"
+                   asp-route-type="excel"
+                   asp-route-keyword="@keyword"
+                   class="btn btn-outline-primary">
+
+                    <i class="bi bi-upload"></i>
+                    匯出清單
+
+                </a>
+            }
+            else
+            {
+                <a asp-action="ExportExpireHistory"
+                   asp-route-type="excel"
+                   asp-route-keyword="@keyword"
+                   class="btn btn-outline-primary">
+
+                    <i class="bi bi-upload"></i>
+                    匯出紀錄
+
+                </a>
+            }
+
+        </div>
+
+    </div>
+
+</form>
+@if (currentTab == "member")
+{
+
+    <div class="card shadow-sm border-0">
+
+        <div class="card-header bg-white">
+
+            <button class="btn btn-success btn-sm"
+                    onclick="batchLine()" hidden>
+
+                <i class="bi bi-line"></i>
+
+                批次LINE通知
+
+            </button>
+
+            <button class="btn btn-warning btn-sm"
+                    onclick="batchFcm()">
+
+                <i class="bi bi-bell-fill"></i>
+
+                批次FCM通知
+
+            </button>
+
+            <button class="btn btn-primary btn-sm"
+                    onclick="batchEmail()">
+
+                <i class="bi bi-envelope-fill"></i>
+
+                批次Email通知
+
+            </button>
+
+        </div>
+
+        <div class="table-responsive">
+
+            <table class="table table-hover align-middle mb-0">
+
+                <thead class="table-light">
+
+                    <tr>
+
+                        <th width="40">
+
+                            <input type="checkbox"
+                                   id="chkAll" />
+
+                        </th>
+
+                        <th width="80">編號</th> @* <-- 在第二欄加入編號標頭 *@
+
+                        <th>
+                            <a asp-action="ExpireNotice"
+                               asp-route-keyword="@keyword"
+                               asp-route-status="@status"
+                               asp-route-sortField="mid"
+                               asp-route-sortDir="@nextDir("mid")"
+                               class="text-decoration-none text-dark">
+
+                                會員編號
+
+                                @if (ViewBag.SortField == "mid")
+                                {
+                                    <i class="bi @(ViewBag.SortDir == "asc"
+                                                                                                                ? "bi-sort-down"
+                                                                                                                : "bi-sort-up")"></i>
+                                                        }
+
+                            </a>
+                        </th>
+                        <th>
+                            <a asp-action="ExpireNotice"
+                               asp-route-keyword="@keyword"
+                               asp-route-status="@status"
+                               asp-route-sortField="name"
+                               asp-route-sortDir="@nextDir("name")"
+                               class="text-decoration-none text-dark">
+
+                                姓名
+
+                                @if (ViewBag.SortField == "name")
+                                {
+                                    <i class="bi @(ViewBag.SortDir == "asc"
+                                                                                                                ? "bi-sort-down"
+                                                                                                                : "bi-sort-up")"></i>
+                                                        }
+
+                            </a>
+                        </th>
+                        <th>
+                            <a asp-action="ExpireNotice"
+                               asp-route-keyword="@keyword"
+                               asp-route-status="@status"
+                               asp-route-sortField="role"
+                               asp-route-sortDir="@nextDir("role")"
+                               class="text-decoration-none text-dark">
+
+                                角色
+
+                                @if (ViewBag.SortField == "role")
+                                {
+                                    <i class="bi @(ViewBag.SortDir == "asc"
+                                                                                                                ? "bi-sort-down"
+                                                                                                                : "bi-sort-up")"></i>
+                                                        }
+
+                            </a>
+                        </th>
+                        <th>
+                            <a asp-action="ExpireNotice"
+                               asp-route-keyword="@keyword"
+                               asp-route-status="@status"
+                               asp-route-sortField="mobile"
+                               asp-route-sortDir="@nextDir("mobile")"
+                               class="text-decoration-none text-dark">
+
+                                手機
+
+                                @if (ViewBag.SortField == "mobile")
+                                {
+                                    <i class="bi @(ViewBag.SortDir == "asc"
+                                                                                                                ? "bi-sort-down"
+                                                                                                                : "bi-sort-up")"></i>
+                                                        }
+
+                            </a>
+                        </th>
+                        <th>
+                            <a asp-action="ExpireNotice"
+                               asp-route-keyword="@keyword"
+                               asp-route-status="@status"
+                               asp-route-sortField="Email"
+                               asp-route-sortDir="@nextDir("Email")"
+                               class="text-decoration-none text-dark">
+
+                                Email
+
+                                @if (ViewBag.SortField == "Email")
+                                {
+                                    <i class="bi @(ViewBag.SortDir == "asc"
+                                                                                                                ? "bi-sort-down"
+                                                                                                                : "bi-sort-up")"></i>
+                                                        }
+
+                            </a>
+                        </th>
+                        <th>
+                            <a asp-action="ExpireNotice"
+                               asp-route-keyword="@keyword"
+                               asp-route-status="@status"
+                               asp-route-sortField="continueDate"
+                               asp-route-sortDir="@nextDir("continueDate")"
+                               class="text-decoration-none text-dark">
+
+                                到期日
+
+                                @if (ViewBag.SortField == "continueDate")
+                                {
+                                    <i class="bi @(ViewBag.SortDir == "asc"
+                                                                                                                ? "bi-sort-numeric-down"
+                                                                                                                : "bi-sort-numeric-up")"></i>
+                                                        }
+
+                            </a>
+                        </th>
+                        <th>
+                            <a asp-action="ExpireNotice"
+                               asp-route-keyword="@keyword"
+                               asp-route-status="@status"
+                               asp-route-sortField="avalible"
+                               asp-route-sortDir="@nextDir("avalible")"
+                               class="text-decoration-none text-dark">
+
+                                狀態
+
+                                @if (ViewBag.SortField == "avalible")
+                                {
+                                    <i class="bi @(ViewBag.SortDir == "asc"
+                                                                                                                ? "bi-sort-down"
+                                                                                                                : "bi-sort-up")"></i>
+                                                        }
+
+                            </a>
+                        </th>
+
+                        <th>
+                            <!-- 新增上線名稱/編號欄位 -->
+                            上線
+                        </th>
+
+                        <th>提醒天數</th>
+                        <th>上次通知</th>
+                        <th>操作</th>
+
+                    </tr>
+
+                </thead>
+
+                <tbody>
+
+                    @foreach (var item in Model.Members)
+                    {
+                        // 計算當前這一筆的正確編號
+                        int currentNo = startNumber + index;
+
+                        <tr>
+
+                            <td>
+
+                                <input type="checkbox"
+                                       class="chk-member"
+                                       value="@item.Sid" />
+
+                            </td>
+
+                            <td>@currentNo</td>
+
+                            <td>@item.Mid</td>
+
+                            <td>@item.Name</td>
+
+                            <td>@item.Role</td>
+
+                            <td>@item.Mobile</td>
+
+                            <td>@item.Email</td>
+
+                            <td>
+
+                                @item.ContinueDate?.ToString("yyyy-MM-dd")
+
+                            </td>
+
+                            <td>
+
+                                @if (item.Status == "已逾期")
+                                {
+                                    <span class="badge bg-danger">
+                                        已逾期
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-warning text-dark">
+                                        即將到期
+                                    </span>
+                                }
+
+                            </td>
+
+                            <!-- 顯示上線姓名與編號/帳號 -->
+                            <td>
+                                @if (!string.IsNullOrEmpty(item.ParentMid))
+                                {
+                                    <span>@item.ParentName (@item.ParentMid)</span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">-</span>
+                                }
+                            </td>
+
+                            <td>
+
+                                @item.HintDays 天
+
+                            </td>
+
+                            <td>
+
+                                @(item.LastNotifyDate?.ToString("yyyy-MM-dd HH:mm")
+                                                        ?? "尚未通知")
+
+                            </td>
+
+                            <td>
+
+                                <button type="button"
+                                        title="LINE通知"
+                                        class="btn btn-success btn-sm"
+                                        onclick="sendLine('@item.Sid')" hidden>
+
+                                    <i class="bi bi-line"></i>
+                                    LINE
+
+                                </button>
+
+                                @if (!string.IsNullOrWhiteSpace(item.FcmToken))
+                                {
+                                    <button type="button"
+                                            title="FCM通知"
+                                            class="btn btn-warning btn-sm"
+                                            onclick="sendFcm('@item.Sid')">
+
+                                        <i class="bi bi-bell-fill"></i>
+                                        FCM
+
+                                    </button>
+                                }
+
+                                @if (!string.IsNullOrWhiteSpace(item.Email))
+                                {
+                                    <button type="button"
+                                            title="Email通知"
+                                            class="btn btn-primary btn-sm"
+                                            onclick="sendEmail('@item.Sid')">
+
+                                        <i class="bi bi-envelope-fill"></i>
+                                        Email
+
+                                    </button>
+                                }
+
+                            </td>
+
+                        </tr>
+                        
+                        index++; // 累加索引
+                    }
+
+                </tbody>
+
+            </table>
+
+        </div>
+
+        <!-- 分頁 -->
+        <div class="card-footer bg-white">
+
+            <div class="d-flex justify-content-between align-items-center">
+
+                <div>
+                    顯示第
+                    @((page - 1) * pageSize + 1)
+                    ~
+                    @(Math.Min(page * pageSize, total))
+                    筆，共
+                    @total
+                    筆
+                </div>
+
+                <nav>
+                    <ul class="pagination mb-0">
+
+                        @for (int i = 1; i <= totalPages; i++)
+                        {
+                            <li class="page-item @(i == page ? "active" : "")">
+
+                                <a class="page-link"
+                                   asp-action="ExpireNotice"
+                                   asp-route-page="@i"
+                                   asp-route-tab="@currentTab"
+                                   asp-route-keyword="@keyword"
+                                   asp-route-status="@status"
+                                   asp-route-sortField="@ViewBag.SortField"
+                                   asp-route-sortDir="@ViewBag.SortDir">
+
+                                    @i
+
+                                </a>
+
+                            </li>
+                        }
+
+                    </ul>
+                </nav>
+
+            </div>
+
+        </div>
+    </div>
+
+}
+else
+{
+
+    <div class="card shadow-sm border-0">
+
+        <div class="table-responsive">
+
+            <table class="table table-hover">
+
+                <thead class="table-light">
+
+                    <tr>
+
+                        <th width="80">編號</th> @* <-- 在第二欄加入編號標頭 *@
+
+                        <th>
+                            <a asp-action="ExpireNotice"
+                               asp-route-tab="@currentTab"
+                               asp-route-keyword="@keyword"
+                               asp-route-status="@status"
+                               asp-route-sortField="SendDate"
+                               asp-route-sortDir="@nextDir("SendDate")"
+                               class="text-decoration-none text-dark">
+
+                                時間
+
+                                @if (ViewBag.SortField == "SendDate")
+                                {
+                                    <i class="bi @(ViewBag.SortDir == "asc"
+                                                ? "bi-sort-numeric-down"
+                                                : "bi-sort-numeric-up")"></i>
+                                }
+
+                            </a>
+                        </th>
+                        <th>
+                            <a asp-action="ExpireNotice"
+                               asp-route-tab="@currentTab"
+                               asp-route-keyword="@keyword"
+                               asp-route-status="@status"
+                               asp-route-sortField="member_mid"
+                               asp-route-sortDir="@nextDir("member_mid")"
+                               class="text-decoration-none text-dark">
+
+                                會員編號
+
+                                @if (ViewBag.SortField == "member_mid")
+                                {
+                                    <i class="bi @(ViewBag.SortDir == "asc"
+                                            ? "bi-sort-down"
+                                            : "bi-sort-up")"></i>
+                                }
+
+                            </a>
+                        </th>
+                        <th>
+                            <a asp-action="ExpireNotice"
+                               asp-route-tab="@currentTab"
+                               asp-route-keyword="@keyword"
+                               asp-route-status="@status"
+                               asp-route-sortField="notify_type"
+                               asp-route-sortDir="@nextDir("notify_type")"
+                               class="text-decoration-none text-dark">
+
+                                通知類型
+
+                                @if (ViewBag.SortField == "notify_type")
+                                {
+                                    <i class="bi @(ViewBag.SortDir == "asc"
+                                                ? "bi-sort-down"
+                                                : "bi-sort-up")"></i>
+                                }
+
+                            </a>
+                        </th>
+                        <th>
+                            <a asp-action="ExpireNotice"
+                               asp-route-tab="@currentTab"
+                               asp-route-keyword="@keyword"
+                               asp-route-status="@status"
+                               asp-route-sortField="push_type"
+                               asp-route-sortDir="@nextDir("push_type")"
+                               class="text-decoration-none text-dark">
+
+                                發送方式
+
+                                @if (ViewBag.SortField == "push_type")
+                                {
+                                    <i class="bi @(ViewBag.SortDir == "asc"
+                                                ? "bi-sort-down"
+                                                : "bi-sort-up")"></i>
+                                }
+
+                            </a>
+                        </th>
+                        <th>
+                            <a asp-action="ExpireNotice"
+                               asp-route-tab="@currentTab"
+                               asp-route-keyword="@keyword"
+                               asp-route-status="@status"
+                               asp-route-sortField="title"
+                               asp-route-sortDir="@nextDir("title")"
+                               class="text-decoration-none text-dark">
+
+                                標題
+
+                                @if (ViewBag.SortField == "title")
+                                {
+                                    <i class="bi @(ViewBag.SortDir == "asc"
+                                                ? "bi-sort-down"
+                                                : "bi-sort-up")"></i>
+                                }
+
+                            </a>
+                        </th>
+                        <th>
+                            <a asp-action="ExpireNotice"
+                               asp-route-tab="@currentTab"
+                               asp-route-keyword="@keyword"
+                               asp-route-status="@status"
+                               asp-route-sortField="result"
+                               asp-route-sortDir="@nextDir("result")"
+                               class="text-decoration-none text-dark">
+
+                                結果
+
+                                @if (ViewBag.SortField == "result")
+                                {
+                                    <i class="bi @(ViewBag.SortDir == "asc"
+                                                ? "bi-sort-down"
+                                                : "bi-sort-up")"></i>
+                                }
+
+                            </a>
+                        </th>
+
+                    </tr>
+
+                </thead>
+
+                <tbody>
+
+                    @foreach (var item in Model.Logs)
+                    {
+                        // 計算當前這一筆的正確編號
+                        int currentNo = startNumber + index;
+
+                        <tr>
+                            <td>
+                                @currentNo
+                            </td>
+
+                            <td>
+                                @item.SendDate.ToString("yyyy-MM-dd HH:mm")
+                            </td>
+
+                            <td>
+                                @item.MemberMid
+                            </td>
+
+                            <td>
+                                @NotifyTypes.getName(item.NotifyType)
+                            </td>
+
+                            <td>
+                                @PushTypes.getName(item.PushType)
+                            </td>
+
+                            <td>
+                                @item.Title
+                            </td>
+
+                            <td>
+
+                                @if (item.Result == "SUCCESS")
+                                {
+                                    <span class="badge bg-success">
+                                        成功
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-danger">
+                                        失敗
+                                    </span>
+                                }
+
+                            </td>
+
+                        </tr>
+
+                        index++; // 累加索引
+                    }
+
+                </tbody>
+
+            </table>
+
+        </div>
+
+    </div>
+
+    <!-- 分頁 -->
+    <div class="card-footer bg-white">
+
+        <div class="d-flex justify-content-between align-items-center">
+
+            <div>
+                顯示第
+                @((page - 1) * pageSize + 1)
+                ~
+                @(Math.Min(page * pageSize, total))
+                筆，共
+                @total
+                筆
+            </div>
+
+            <nav>
+                <ul class="pagination mb-0">
+
+                    @for (int i = 1; i <= totalPages; i++)
+                    {
+                        <li class="page-item @(i == page ? "active" : "")">
+
+                            <a class="page-link"
+                               asp-action="ExpireNotice"
+                               asp-route-page="@i"
+                               asp-route-tab="@currentTab"
+                               asp-route-keyword="@keyword"
+                               asp-route-status="@status"
+                               asp-route-sortField="@ViewBag.SortField"
+                               asp-route-sortDir="@ViewBag.SortDir">
+
+                                @i
+
+                            </a>
+
+                        </li>
+                    }
+
+                </ul>
+            </nav>
+
+        </div>
+
+    </div>
+
+}
+
+@section Scripts
+{
+
+    <script>
+
+        document.getElementById("chkAll")
+        ?.addEventListener("change", function () {
+
+            document
+                .querySelectorAll(".chk-member")
+                .forEach(x => x.checked = this.checked);
+
+        });
+
+        function getSelectedMembers()
+        {
+            return [...document.querySelectorAll(".chk-member:checked")]
+                .map(x => x.value);
+        }
+
+        async function sendLine(sid)
+        {
+            if (!confirm("確定發送 LINE 到期通知？"))
+                return;
+
+            const response =
+                await fetch(
+                    '/Member/SendLineNotice',
+                    {
+                        method: 'POST',
+                        headers:
+                        {
+                            'Content-Type':
+                                'application/x-www-form-urlencoded'
+                        },
+                        body: 'sid=' + sid
+                    });
+
+            const result =
+                await response.json();
+
+            if (result.success)
+            {
+                alert('LINE通知發送成功');
+                location.reload();
+            }
+            else
+            {
+                alert(result.message);
+            }
+        }
+
+        async function sendFcm(sid)
+        {
+            if (!confirm("確定發送 FCM 到期通知？"))
+                return;
+
+            const response =
+                await fetch(
+                    '/Member/SendFcmNotice',
+                    {
+                        method: 'POST',
+                        headers:
+                        {
+                            'Content-Type':
+                                'application/x-www-form-urlencoded'
+                        },
+                        body: 'sid=' + sid
+                    });
+
+            const result =
+                await response.json();
+
+            if (result.success)
+            {
+                alert('FCM通知發送成功');
+                location.reload();
+            }
+            else
+            {
+                alert(result.message);
+            }
+        }
+
+        async function sendEmail(sid)
+        {
+            if (!confirm("確定發送 Email 到期通知？"))
+                return;
+
+            const response =
+                await fetch(
+                    '/Member/SendEmailNotice',
+                    {
+                        method: 'POST',
+                        headers:
+                        {
+                            'Content-Type':
+                                'application/x-www-form-urlencoded'
+                        },
+                        body: 'sid=' + sid
+                    });
+
+            const result =
+                await response.json();
+
+            if (result.success)
+            {
+                alert('Email通知發送成功');
+                location.reload();
+            }
+            else
+            {
+                alert(result.message);
+            }
+        }
+
+        async function batchLine()
+        {
+            const ids =
+                getSelectedMembers();
+
+            if (ids.length === 0)
+            {
+                alert("請先勾選會員");
+                return;
+            }
+
+            if (!confirm(`確定發送 ${ids.length} 位會員 LINE 通知？`))
+                return;
+
+            const response =
+                await fetch(
+                    '/Member/BatchLineNotice',
+                    {
+                        method: 'POST',
+                        headers:
+                        {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(ids)
+                    });
+
+            const result =
+                await response.json();
+
+            if (result.success)
+            {
+                alert(`成功發送 ${result.count} 筆 LINE 通知`);
+                location.reload();
+            }
+            else
+            {
+                alert(`發送 LINE 通知結果 :\n發送成功 :${result.count} 筆\n發送失敗 :${result.error_count} 筆`);
+                location.reload();
+            }
+        }
+
+        async function batchFcm()
+        {
+            const ids =
+                getSelectedMembers();
+
+            if (ids.length === 0)
+            {
+                alert("請先勾選會員");
+                return;
+            }
+
+            if (!confirm(`確定發送 ${ids.length} 位會員 FCM 通知？`))
+                return;
+
+            const response =
+                await fetch(
+                    '/Member/BatchFcmNotice',
+                    {
+                        method: 'POST',
+                        headers:
+                        {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(ids)
+                    });
+
+            const result =
+                await response.json();
+
+            if (result.success)
+            {
+                alert(`成功發送 ${result.count} 筆 FCM 通知`);
+                location.reload();
+            }
+            else
+            {
+                alert(`發送 FCM 通知結果 :\n發送成功 :${result.count} 筆\n發送失敗 :${result.error_count} 筆`);
+                location.reload();
+            }
+        }
+
+        async function batchEmail()
+        {
+            const ids =
+                getSelectedMembers();
+
+            if (ids.length === 0)
+            {
+                alert("請先勾選會員");
+                return;
+            }
+
+            if (!confirm(`確定發送 ${ids.length} 位會員 Email 通知？`))
+                return;
+
+            const response =
+                await fetch(
+                    '/Member/BatchEmailNotice',
+                    {
+                        method: 'POST',
+                        headers:
+                        {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(ids)
+                    });
+
+            const result =
+                await response.json();
+
+            if (result.success)
+            {
+                alert(`成功發送 ${result.count} 筆 Email 通知`);
+                location.reload();
+            }
+            else
+            {
+                alert(`發送 Email 通知結果 :\n發送成功 :${result.count} 筆\n發送失敗 :${result.error_count} 筆`);
+                location.reload();
+            }
+        }
+
+    </script>
+
+}
+
+
+<link rel="stylesheet" href="~/css/expirenotice.css" />

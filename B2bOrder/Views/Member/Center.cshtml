@@ -1,0 +1,191 @@
+@model B2bOrder.Models.MemberCenterViewModel
+
+@{
+    ViewData["Title"] = "個人資料管理";
+    var changeModel = ViewData["ChangePasswordModel"] as B2bOrder.Models.ChangePasswordViewModel;
+    // Helper to produce datetime-local formatted value (local time)
+    Func<DateTime?, string> toLocalDateTimeValue = dt =>
+    {
+        if (!dt.HasValue) return string.Empty;
+        var local = dt.Value.ToLocalTime();
+        return local.ToString("yyyy-MM-ddTHH:mm");
+    };
+}
+
+<div class="container py-4">
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">個人資料管理</h5>
+            <div>
+                <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#changePasswordModal">
+                    變更密碼
+                </button>
+            </div>
+        </div>
+        <div class="card-body">
+            @if (TempData["Success"] != null)
+            {
+                <div class="alert alert-success" role="alert">@TempData["Success"]</div>
+            }
+
+            <form asp-action="Center" method="post" novalidate>
+                @Html.AntiForgeryToken()
+                <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+
+                <div class="mb-3">
+                    <label class="form-label">帳號</label>
+                    <input asp-for="Mid" class="form-control" readonly />
+                </div>
+
+                <div class="mb-3">
+                    <label asp-for="Name" class="form-label"></label>
+                    <input asp-for="Name" class="form-control" />
+                    <span asp-validation-for="Name" class="text-danger"></span>
+                </div>
+
+                <div class="mb-3">
+                    <label asp-for="Email" class="form-label"></label>
+                    <input asp-for="Email" class="form-control" />
+                    <span asp-validation-for="Email" class="text-danger"></span>
+                </div>
+
+                <div class="mb-3 row">
+                    <div class="col-md-6">
+                        <label asp-for="Mobile" class="form-label"></label>
+                        <input asp-for="Mobile" class="form-control" />
+                        <span asp-validation-for="Mobile" class="text-danger"></span>
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="Tel" class="form-label"></label>
+                        <input asp-for="Tel" class="form-control" />
+                        <span asp-validation-for="Tel" class="text-danger"></span>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label asp-for="Address" class="form-label"></label>
+                    <input asp-for="Address" class="form-control" />
+                    <span asp-validation-for="Address" class="text-danger"></span>
+                </div>
+
+                <div class="mb-3">
+                    <label asp-for="Birthday" class="form-label"></label>
+                    <input asp-for="Birthday" class="form-control" type="date" />
+                    <span asp-validation-for="Birthday" class="text-danger"></span>
+                </div>
+
+                <div class="mb-3 row align-items-center">
+                    <div class="col-md-6">
+                        <label asp-for="JoinDate" class="form-label">加入日期</label>
+                        <input class="form-control" readonly value="@(Model.JoinDate.HasValue ? Model.JoinDate.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : "")" />
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="ContinueDate" class="form-label">續約日期</label>
+                        <div class="input-group">
+                            <input id="ContinueDate" name="ContinueDate" type="datetime-local" class="form-control"
+                                   value="@(toLocalDateTimeValue(Model.ContinueDate))" />
+                            <button id="markRenewedBtn" type="button" class="btn btn-success" title="以現在時間標記已續約">已續約</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="d-flex gap-2 mt-3">
+                    <button type="submit" class="btn btn-primary">儲存變更</button>
+                    <a asp-action="Index" asp-controller="Home" class="btn btn-outline-secondary">返回</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Change Password Modal (保留原本內容) -->
+<div class="modal fade" id="changePasswordModal" tabindex="-1" aria-labelledby="changePasswordModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form asp-action="ChangePassword" asp-controller="Member" method="post" novalidate>
+                @Html.AntiForgeryToken()
+                <div class="modal-header">
+                    <h5 class="modal-title" id="changePasswordModalLabel">變更密碼</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="關閉"></button>
+                </div>
+                <div class="modal-body">
+                    <div asp-validation-summary="ModelOnly" class="text-danger mb-2"></div>
+
+                    <div class="mb-3">
+                        <label for="OldPassword" class="form-label">舊密碼</label>
+                        <input id="OldPassword" name="OldPassword" type="password" class="form-control" value="@(changeModel?.OldPassword ?? string.Empty)" />
+                        @if (ViewData.ModelState["OldPassword"] != null && ViewData.ModelState["OldPassword"].Errors.Count > 0)
+                        {
+                            <span class="text-danger">@ViewData.ModelState["OldPassword"].Errors[0].ErrorMessage</span>
+                        }
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="NewPassword" class="form-label">新密碼</label>
+                        <input id="NewPassword" name="NewPassword" type="password" class="form-control" value="@(changeModel?.NewPassword ?? string.Empty)" />
+                        @if (ViewData.ModelState["NewPassword"] != null && ViewData.ModelState["NewPassword"].Errors.Count > 0)
+                        {
+                            <span class="text-danger">@ViewData.ModelState["NewPassword"].Errors[0].ErrorMessage</span>
+                        }
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="ConfirmPassword" class="form-label">確認新密碼</label>
+                        <input id="ConfirmPassword" name="ConfirmPassword" type="password" class="form-control" value="@(changeModel?.ConfirmPassword ?? string.Empty)" />
+                        @if (ViewData.ModelState["ConfirmPassword"] != null && ViewData.ModelState["ConfirmPassword"].Errors.Count > 0)
+                        {
+                            <span class="text-danger">@ViewData.ModelState["ConfirmPassword"].Errors[0].ErrorMessage</span>
+                        }
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-danger">更新密碼</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+    <script>
+        // 將「已續約」按鈕設為當下本機時間（datetime-local 格式）
+        (function () {
+            function pad(n) { return n < 10 ? '0' + n : n; }
+            function toLocalDateTimeLocalString(d) {
+                // produce "yyyy-MM-ddTHH:mm"
+                return d.getFullYear() + '-' +
+                    pad(d.getMonth() + 1) + '-' +
+                    pad(d.getDate()) + 'T' +
+                    pad(d.getHours()) + ':' +
+                    pad(d.getMinutes());
+            }
+
+            const btn = document.getElementById('markRenewedBtn');
+            const input = document.getElementById('ContinueDate');
+            if (btn && input) {
+                btn.addEventListener('click', function () {
+                    const now = new Date();
+                    input.value = toLocalDateTimeLocalString(now);
+                    // 畫面提示並 focus input
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                    input.focus();
+                });
+            }
+        })();
+    </script>
+
+    @if (ViewBag.ShowChangePasswordModal == true)
+    {
+        <script>
+            (function () {
+                var modalEl = document.getElementById('changePasswordModal');
+                if (modalEl) {
+                    var bsModal = new bootstrap.Modal(modalEl);
+                    bsModal.show();
+                }
+            })();
+        </script>
+    }
+}
