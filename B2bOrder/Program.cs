@@ -1,4 +1,5 @@
 ﻿using B2bOrder.Data;
+using B2bOrder.Data.ShareCore;
 using B2bOrder.Hubs;
 using B2bOrder.Models;
 using B2bOrder.Repositories;
@@ -79,7 +80,21 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 // 讀取 ConnectionString
-var cs = builder.Configuration.GetConnectionString("DefaultConnection");
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+var masterConnectionString = builder.Configuration.GetConnectionString("MasterConnection");
+var mdmConnectionString = builder.Configuration.GetConnectionString("MdmConnection");
+
+// 1. 業務 Context
+builder.Services.AddDbContext<ApplicationDbContext>(options =>
+    options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)));
+
+// 2. MasterDB Context
+builder.Services.AddDbContext<MasterDbContext>(options =>
+    options.UseMySql(masterConnectionString, ServerVersion.AutoDetect(masterConnectionString)));
+
+// 3. MDMDB Context
+builder.Services.AddDbContext<MdmDbContext>(options =>
+    options.UseMySql(mdmConnectionString, ServerVersion.AutoDetect(mdmConnectionString)));
 
 // 宣告資料庫健康狀態狀態物件
 var dbHealth = new DatabaseHealth { IsDatabaseConnectOK = true, IsDatabaseAvailable = true };
@@ -88,7 +103,7 @@ ServerVersion serverVersion = null;
 try
 {
     // 嘗試偵測資料庫版本（如果 DB 沒開，這裡會直接拋出例外）
-    serverVersion = ServerVersion.AutoDetect(cs);
+    serverVersion = ServerVersion.AutoDetect(connectionString);
 }
 catch (Exception ex)
 {
@@ -104,7 +119,7 @@ catch (Exception ex)
 
 // 註冊 ApplicationDbContext
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseMySql(cs, serverVersion));
+    options.UseMySql(connectionString, serverVersion));
 
 // 註冊 DatabaseHealth 供 middleware 與頁面檢查
 builder.Services.AddSingleton(dbHealth);
@@ -205,7 +220,7 @@ using (var scope = app.Services.CreateScope())
             try
             {
                 // 先以 MySqlConnectionStringBuilder 取得資料庫名稱並建立資料庫（若不存在）
-                var csBuilder = new MySqlConnectionStringBuilder(cs);
+                var csBuilder = new MySqlConnectionStringBuilder(connectionString);
                 var dbName = csBuilder.Database ?? string.Empty;
                 if (string.IsNullOrWhiteSpace(dbName))
                 {
@@ -235,7 +250,7 @@ using (var scope = app.Services.CreateScope())
                     if (!String.IsNullOrEmpty(CreateTables))
                     {
                         // 如果 table 已存在則不執行整個 SQL 檔（避免 CREATE INDEX 重覆錯誤）
-                        bool tableExists = TableExists(db, "data_member", cs, logger);
+                        bool tableExists = TableExists(db, "data_member", connectionString, logger);
                         if (!tableExists)
                         {
                             db.Database.ExecuteSqlRaw(CreateTables);
